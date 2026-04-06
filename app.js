@@ -1,4 +1,4 @@
-const API_URL = "https://your-lumen-url.onrender.com/ask";
+const API_URL = "https://lumen-ai.onrender.com/ask";
 
 // Navigation
 document.querySelectorAll('.nav').forEach(btn => {
