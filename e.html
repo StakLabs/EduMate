@@ -3,56 +3,61 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>EduMate</title>
+  <title>EduMate - Notebook</title>
   <link rel="stylesheet" href="styles.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500&family=Roboto:wght@400;500&display=swap" rel="stylesheet">
 </head>
 <body>
 
-<div class="app">
+<div class="app-container">
   <aside class="sidebar">
-    <h1>EduMate</h1>
-    <button class="nav" data-tab="sources">Sources</button>
-    <button class="nav" data-tab="chat">AI</button>
-    <button class="nav" data-tab="tasks">Tasks</button>
+    <div class="sidebar-top">
+      <h2 class="logo">EduMate</h2>
+      <button class="add-source-btn" onclick="document.getElementById('fileInput').click()">
+        <span class="icon">+</span> Add source
+      </button>
+      <input type="file" id="fileInput" hidden onchange="uploadFiles()" />
+    </div>
+    
+    <div class="sources-section">
+      <p class="section-label">Sources</p>
+      <div id="fileList" class="file-list">
+        </div>
+    </div>
   </aside>
 
-  <main class="main">
-
-    <!-- SOURCES -->
-    <section id="sources" class="tab active">
-      <h2>Sources</h2>
-
-      <div class="upload-box">
-        <input type="file" id="fileInput" multiple />
-        <button onclick="uploadFiles()">Upload</button>
-      </div>
-
-      <div id="fileList"></div>
-    </section>
-
-    <!-- CHAT -->
-    <section id="chat" class="tab">
-      <h2>AI Workspace</h2>
-
-      <div id="chatBox"></div>
-
-      <div class="chat-input">
-        <input id="userInput" placeholder="Ask something..." />
-        <button onclick="sendMessage()">Send</button>
-      </div>
-    </section>
-
-    <!-- TASKS -->
-    <section id="tasks" class="tab">
-      <h2>Tasks</h2>
-
-      <input id="taskInput" placeholder="New task..." />
-      <button onclick="addTask()">Add</button>
-
-      <div id="taskList"></div>
-    </section>
-
+  <main class="canvas">
+    <div class="canvas-paper">
+      <header class="canvas-header">
+        <h1 id="activeDocTitle">Notebook Guide</h1>
+      </header>
+      <article id="sourceDisplay" class="canvas-content">
+        <p>Select a source from the left to begin your analysis.</p>
+        <p style="color: #5f6368; font-size: 0.9rem; margin-top: 20px;">
+          EduMate AI can help you summarize documents, explain complex concepts, and find specific information across your sources.
+        </p>
+      </article>
+    </div>
   </main>
+
+  <section class="chat-pane">
+    <div class="chat-header">
+      <span>AI Chat</span>
+    </div>
+    
+    <div id="chatBox" class="chat-messages">
+      <div class="msg ai">I can help you with the sources you've uploaded. What would you like to know?</div>
+    </div>
+
+    <div class="chat-input-area">
+      <div class="input-pill">
+        <textarea id="userInput" placeholder="Ask a question..." rows="1"></textarea>
+        <button id="sendBtn" class="send-btn" onclick="sendMessage()">
+          <svg viewBox="0 0 24 24" width="24" height="24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" fill="currentColor"></path></svg>
+        </button>
+      </div>
+    </div>
+  </section>
 </div>
 
 <script src="app.js"></script>
