@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>EduMate</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<div class="app">
+  <aside class="sidebar">
+    <h1>EduMate</h1>
+    <button class="nav" data-tab="sources">Sources</button>
+    <button class="nav" data-tab="chat">AI</button>
+    <button class="nav" data-tab="tasks">Tasks</button>
+  </aside>
+
+  <main class="main">
+
+    <!-- SOURCES -->
+    <section id="sources" class="tab active">
+      <h2>Sources</h2>
+
+      <div class="upload-box">
+        <input type="file" id="fileInput" multiple />
+        <button onclick="uploadFiles()">Upload</button>
+      </div>
+
+      <div id="fileList"></div>
+    </section>
+
+    <!-- CHAT -->
+    <section id="chat" class="tab">
+      <h2>AI Workspace</h2>
+
+      <div id="chatBox"></div>
+
+      <div class="chat-input">
+        <input id="userInput" placeholder="Ask something..." />
+        <button onclick="sendMessage()">Send</button>
+      </div>
+    </section>
+
+    <!-- TASKS -->
+    <section id="tasks" class="tab">
+      <h2>Tasks</h2>
+
+      <input id="taskInput" placeholder="New task..." />
+      <button onclick="addTask()">Add</button>
+
+      <div id="taskList"></div>
+    </section>
+
+  </main>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
