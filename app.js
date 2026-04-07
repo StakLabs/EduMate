@@ -20,6 +20,10 @@ function saveData() {
     }
 }
 
+function getTotalStorageSize() {
+    return encodeURI(JSON.stringify(subjects)).split(/%..|./).length - 1;
+}
+
 function init() {
     const keys = Object.keys(subjects);
     if (keys.length === 0) {
@@ -85,14 +89,11 @@ function confirmRename() {
     const newName = document.getElementById('renameInput').value.trim();
     if (!newName || newName === targetSubjectForContext) return closeRenameModal();
     if (subjects[newName]) return alert("A workspace with this name already exists.");
-
     subjects[newName] = subjects[targetSubjectForContext];
     delete subjects[targetSubjectForContext];
-
     if (activeSubject === targetSubjectForContext) {
         activeSubject = newName;
     }
-    
     saveData();
     renderSubjectList();
     if (activeSubject === newName) {
@@ -114,13 +115,11 @@ function confirmDeleteSubject() {
     if (targetSubjectForContext && subjects[targetSubjectForContext]) {
         delete subjects[targetSubjectForContext];
         const remaining = Object.keys(subjects);
-        
         if (remaining.length === 0) {
             activeSubject = null;
         } else if (activeSubject === targetSubjectForContext) {
             activeSubject = remaining[0];
         }
-        
         saveData();
         if (activeSubject) {
             switchSubject(activeSubject);
@@ -162,13 +161,20 @@ function hideEmptyState() {
 
 function uploadFiles() {
     const input = document.getElementById('fileInput');
+    const MAX_BYTES = 4 * 1024 * 1024;
     if (input.files.length > 0) {
         Array.from(input.files).forEach(file => {
             const reader = new FileReader();
             reader.onload = (e) => {
+                const newData = e.target.result;
+                const currentSize = getTotalStorageSize();
+                if (currentSize + newData.length > MAX_BYTES) {
+                    alert(`Upload failed: "${file.name}" exceeds the 4MB total limit.`);
+                    return;
+                }
                 subjects[activeSubject].files.push({
                     name: file.name,
-                    data: e.target.result,
+                    data: newData,
                     type: file.type,
                     selected: true
                 });
@@ -184,7 +190,6 @@ function renderFileList() {
     const list = document.getElementById('fileList');
     list.innerHTML = "";
     if(!activeSubject) return;
-    
     subjects[activeSubject].files.forEach((file, index) => {
         list.innerHTML += `
       <div class="file-item">
@@ -218,7 +223,6 @@ function renderChat() {
     const chatBox = document.getElementById('chatBox');
     chatBox.innerHTML = "";
     if(!activeSubject) return;
-
     subjects[activeSubject].chatHistory.forEach(msg => {
         const div = document.createElement('div');
         div.className = `msg ${msg.role}`;
@@ -273,27 +277,21 @@ async function runTool(type, count = null) {
     if(!activeSubject) return;
     const selectedFiles = subjects[activeSubject].files.filter(f => f.selected);
     if (selectedFiles.length === 0) return alert("Select at least one file");
-
     const display = document.getElementById('sourceDisplay');
     startLoading('sourceDisplay', false);
-
     let promptStr = "";
     if (type === 'quiz') promptStr = `Create a quiz. Generate exactly ${count} questions. JSON ONLY: [{"question": "...", "options": ["...", "...", "...", "..."], "answer": "..."}]`;
     else if (type === 'summary') promptStr = "Summarize these files.";
     else if (type === 'studyplan') promptStr = "Create a study plan.";
-
     const formData = new FormData();
     formData.append("prompt", promptStr);
     formData.append("model", "Lumen VI");
-
     const blob = await (await fetch(selectedFiles[0].data)).blob();
     formData.append("file", blob, selectedFiles[0].name);
-
     try {
         const res = await fetch(API_URL, { method: "POST", body: formData });
         const data = await res.json();
         stopLoading();
-
         if (type === 'quiz') {
             const match = data.response.match(/\[[\s\S]*\]/);
             currentQuizData = JSON.parse(match[0]);
@@ -339,20 +337,15 @@ async function sendMessage() {
     const input = document.getElementById('userInput');
     const msg = input.value.trim();
     if (!msg) return;
-
     const selectedFiles = subjects[activeSubject].files.filter(f => f.selected);
     const workspace = document.getElementById('sourceDisplay').innerText;
-
     subjects[activeSubject].chatHistory.push({ role: "user", text: msg });
     renderChat();
     input.value = "";
-
     const thinkingId = "thinking-" + Date.now();
     document.getElementById('chatBox').innerHTML += `<div class="msg ai thinking" id="${thinkingId}"><i id="${thinkingId}-status">Thinking...</i></div>`;
     startLoading(`${thinkingId}-status`, true);
-
     const fullPrompt = `Context: ${workspace}\nHistory: ${subjects[activeSubject].chatHistory.slice(-5).map(h => h.text).join("\n")}\nQuestion: ${msg}`;
-    
     const formData = new FormData();
     formData.append("prompt", fullPrompt);
     formData.append("model", selectedFiles.length > 0 ? "Lumen VI" : "Lumen V");
@@ -360,7 +353,6 @@ async function sendMessage() {
         const blob = await (await fetch(selectedFiles[0].data)).blob();
         formData.append("file", blob, selectedFiles[0].name);
     }
-
     try {
         const res = await fetch(API_URL, { method: "POST", body: formData });
         const data = await res.json();
