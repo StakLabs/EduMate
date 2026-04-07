@@ -139,32 +139,31 @@ body {
 .canvas {
   flex: 1;
   padding: 24px;
-  overflow-y: auto;
+  overflow-y: auto; /* Keeps the scrollbar on the main canvas area */
   display: flex;
   flex-direction: column;
+  align-items: center; /* Centers the paper */
 }
 
 .canvas-paper {
   width: 100%;
   max-width: 850px;
-  margin: 0 auto;
-  min-height: 100%;
+  height: auto; /* Changed from min-height: 100% to allow growth */
+  min-height: fit-content; 
   background: var(--bg-canvas);
   border-radius: 16px;
   border: 1px solid var(--border-color);
   box-shadow: 0 1px 3px rgba(0,0,0,0.05);
   display: flex;
   flex-direction: column;
-}
-
-.canvas-header {
-  padding: 32px 48px 16px;
-  border-bottom: 1px solid #f1f3f4;
+  margin-bottom: 40px; /* Gives some breathing room at the bottom */
 }
 
 .canvas-content {
   padding: 24px 48px 48px;
   line-height: 1.6;
+  height: auto; /* Ensures the article expands */
+  overflow: visible; /* Prevents internal clipping */
 }
 
 .chat-pane {
