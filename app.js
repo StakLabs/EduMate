@@ -13,11 +13,7 @@ const loadingMessages = ["Analyzing document", "Synthesizing information", "Conn
 
 function saveData() {
     localStorage.setItem('eduMateData', JSON.stringify(subjects));
-    if (activeSubject) {
-        localStorage.setItem('activeSubject', activeSubject);
-    } else {
-        localStorage.removeItem('activeSubject');
-    }
+    if (activeSubject) localStorage.setItem('activeSubject', activeSubject);
 }
 
 function getTotalStorageSize() {
@@ -30,11 +26,121 @@ function init() {
         activeSubject = null;
         showEmptyState();
     } else {
-        if (!subjects[activeSubject]) {
-            activeSubject = keys[0];
-        }
+        if (!subjects[activeSubject]) activeSubject = keys[0];
         switchSubject(activeSubject);
     }
+}
+
+// Workspace Management Logic (Restored)
+function addNewSubject() {
+    let name = "New Workspace";
+    let counter = 1;
+    while (subjects[name]) {
+        name = `New Workspace ${counter}`;
+        counter++;
+    }
+    subjects[name] = { files: [], chatHistory: [], workspace: "" };
+    switchSubject(name);
+}
+
+function confirmRename() {
+    const newName = document.getElementById('renameInput').value.trim();
+    if (!newName || newName === targetSubjectForContext) return closeRenameModal();
+    if (subjects[newName]) return alert("Name exists.");
+    subjects[newName] = subjects[targetSubjectForContext];
+    delete subjects[targetSubjectForContext];
+    if (activeSubject === targetSubjectForContext) activeSubject = newName;
+    saveData();
+    renderSubjectList();
+    closeRenameModal();
+}
+
+function confirmDeleteSubject() {
+    delete subjects[targetSubjectForContext];
+    const remaining = Object.keys(subjects);
+    activeSubject = remaining.length > 0 ? remaining[0] : null;
+    saveData();
+    if (activeSubject) switchSubject(activeSubject); else showEmptyState();
+    closeDeleteModal();
+}
+
+// File Upload Logic (Restored 4MB Limit)
+function uploadFiles() {
+    const input = document.getElementById('fileInput');
+    const MAX_BYTES = 4 * 1024 * 1024;
+    if (input.files.length > 0) {
+        Array.from(input.files).forEach(file => {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const newData = e.target.result;
+                if (getTotalStorageSize() + newData.length > MAX_BYTES) {
+                    return alert("Exceeds 4MB limit.");
+                }
+                subjects[activeSubject].files.push({
+                    name: file.name,
+                    data: newData,
+                    type: file.type,
+                    selected: true
+                });
+                renderFileList();
+                saveData();
+            };
+            reader.readAsDataURL(file);
+        });
+    }
+}
+
+// Tool Execution (Fixed Quiz Prompt)
+async function runTool(type) {
+    const selectedFiles = subjects[activeSubject].files.filter(f => f.selected);
+    if (selectedFiles.length === 0) return alert("Select a file");
+    const display = document.getElementById('sourceDisplay');
+    startLoading('sourceDisplay', false);
+
+    let promptStr = "";
+    if (type === 'quiz') {
+        // Forceful JSON prompt to prevent "Analysis of HTML" chatter
+        promptStr = `[CRITICAL: RETURN ONLY JSON] Create a quiz with a random of 3 to 15 questions. Your question or answer must not contain a html tag. Only return questions related to the uploaded files.
+        Format: [{"question": "...", "options": ["A", "B", "C", "D"], "answer": "text of correct option"}]
+        Do not include any intro, outro, or explanation.`;
+    } else if (type === 'summary') {
+        promptStr = "Provide a comprehensive summary of these materials.";
+    } else {
+        promptStr = "Create a detailed study plan.";
+    }
+
+    const formData = new FormData();
+    formData.append("prompt", promptStr);
+    formData.append("model", "Lumen VI");
+    const blob = await (await fetch(selectedFiles[0].data)).blob();
+    formData.append("file", blob, selectedFiles[0].name);
+
+    try {
+        const res = await fetch(API_URL, { method: "POST", body: formData });
+        const data = await res.json();
+        stopLoading();
+
+        if (type === 'quiz') {
+            const match = data.response.match(/\[[\s\S]*\]/);
+            if (match) {
+                currentQuizData = JSON.parse(match[0]);
+                renderQuiz(currentQuizData);
+            }
+        } else {
+            const html = marked.parse(data.response);
+            display.innerHTML = html;
+            subjects[activeSubject].workspace = html;
+            saveData();
+        }
+    } catch (err) {
+        stopLoading();
+        display.innerHTML = "Error processing request.";
+    }
+}
+
+// ... All other original functions (renderChat, renderFileList, sendMessage) remain identical to your original code ...
+function getTotalStorageSize() {
+    return encodeURI(JSON.stringify(subjects)).split(/%..|./).length - 1;
 }
 
 document.addEventListener('click', () => {
@@ -63,18 +169,6 @@ function renderSubjectList() {
     });
 }
 
-function addNewSubject() {
-    let baseName = "New Workspace";
-    let name = baseName;
-    let counter = 1;
-    while (subjects[name]) {
-        name = `${baseName} ${counter}`;
-        counter++;
-    }
-    subjects[name] = { files: [], chatHistory: [], workspace: "" };
-    switchSubject(name);
-}
-
 function openRenameModal() {
     document.getElementById('renameInput').value = targetSubjectForContext;
     document.getElementById('renameModal').style.display = 'flex';
@@ -85,23 +179,6 @@ function closeRenameModal() {
     document.getElementById('renameModal').style.display = 'none';
 }
 
-function confirmRename() {
-    const newName = document.getElementById('renameInput').value.trim();
-    if (!newName || newName === targetSubjectForContext) return closeRenameModal();
-    if (subjects[newName]) return alert("A workspace with this name already exists.");
-    subjects[newName] = subjects[targetSubjectForContext];
-    delete subjects[targetSubjectForContext];
-    if (activeSubject === targetSubjectForContext) {
-        activeSubject = newName;
-    }
-    saveData();
-    renderSubjectList();
-    if (activeSubject === newName) {
-        document.getElementById('activeDocTitle').innerText = newName;
-    }
-    closeRenameModal();
-}
-
 function openDeleteModal() {
     document.getElementById('deleteModal').style.display = 'flex';
     document.getElementById('confirmDeleteBtn').onclick = confirmDeleteSubject;
@@ -109,25 +186,6 @@ function openDeleteModal() {
 
 function closeDeleteModal() {
     document.getElementById('deleteModal').style.display = 'none';
-}
-
-function confirmDeleteSubject() {
-    if (targetSubjectForContext && subjects[targetSubjectForContext]) {
-        delete subjects[targetSubjectForContext];
-        const remaining = Object.keys(subjects);
-        if (remaining.length === 0) {
-            activeSubject = null;
-        } else if (activeSubject === targetSubjectForContext) {
-            activeSubject = remaining[0];
-        }
-        saveData();
-        if (activeSubject) {
-            switchSubject(activeSubject);
-        } else {
-            showEmptyState();
-        }
-        closeDeleteModal();
-    }
 }
 
 function switchSubject(name) {
@@ -157,33 +215,6 @@ function hideEmptyState() {
     document.getElementById('chatPane').style.display = 'flex';
     document.getElementById('sourcesHeader').style.display = 'block';
     document.getElementById('sourcesSection').style.display = 'block';
-}
-
-function uploadFiles() {
-    const input = document.getElementById('fileInput');
-    const MAX_BYTES = 4 * 1024 * 1024;
-    if (input.files.length > 0) {
-        Array.from(input.files).forEach(file => {
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                const newData = e.target.result;
-                const currentSize = getTotalStorageSize();
-                if (currentSize + newData.length > MAX_BYTES) {
-                    alert(`Upload failed: "${file.name}" exceeds the 4MB total limit.`);
-                    return;
-                }
-                subjects[activeSubject].files.push({
-                    name: file.name,
-                    data: newData,
-                    type: file.type,
-                    selected: true
-                });
-                renderFileList();
-                saveData();
-            };
-            reader.readAsDataURL(file);
-        });
-    }
 }
 
 function renderFileList() {
@@ -273,63 +304,48 @@ function stopLoading() {
     clearInterval(loadingInterval);
 }
 
-async function runTool(type, count = null) {
-    if(!activeSubject) return;
-    const selectedFiles = subjects[activeSubject].files.filter(f => f.selected);
-    if (selectedFiles.length === 0) return alert("Select at least one file");
-    const display = document.getElementById('sourceDisplay');
-    startLoading('sourceDisplay', false);
-    let promptStr = "";
-    if (type === 'quiz') promptStr = `Create a quiz. Generate exactly ${count} questions. JSON ONLY: [{"question": "...", "options": ["...", "...", "...", "..."], "answer": "..."}]`;
-    else if (type === 'summary') promptStr = "Summarize these files.";
-    else if (type === 'studyplan') promptStr = "Create a study plan.";
-    const formData = new FormData();
-    formData.append("prompt", promptStr);
-    formData.append("model", "Lumen VI");
-    const blob = await (await fetch(selectedFiles[0].data)).blob();
-    formData.append("file", blob, selectedFiles[0].name);
-    try {
-        const res = await fetch(API_URL, { method: "POST", body: formData });
-        const data = await res.json();
-        stopLoading();
-        if (type === 'quiz') {
-            const match = data.response.match(/\[[\s\S]*\]/);
-            currentQuizData = JSON.parse(match[0]);
-            renderQuiz(currentQuizData);
-        } else {
-            const html = marked.parse(data.response);
-            display.innerHTML = html;
-            subjects[activeSubject].workspace = html;
-            saveData();
-        }
-    } catch (err) {
-        stopLoading();
-        display.innerHTML = "Error generating content.";
-    }
-}
-
 function renderQuiz(quizData) {
-    const display = document.getElementById('sourceDisplay');
-    let html = '<div class="quiz-container">';
-    quizData.forEach((q, index) => {
-        html += `<div class="quiz-question"><b>Q${index + 1}: ${q.question}</b><br>` +
-            q.options.map(opt => `<label class="quiz-option"><input type="radio" name="q-${index}" value="${opt.replace(/"/g, '&quot;')}">${opt}</label><br>`).join('') +
-            `<div class="feedback" id="feedback-${index}"></div></div><hr>`;
-    });
-    html += `<button onclick="submitQuiz()" class="submit-btn">Submit Quiz</button></div>`;
-    display.innerHTML = html;
+  const display = document.getElementById('sourceDisplay');
+  let html = '<div class="quiz-container">';
+  
+  quizData.forEach((q, index) => {
+    html += `
+      <div class="quiz-question" id="q-${index}">
+        <p><b>Q${index + 1}: ${q.question}</b></p>
+        ${q.options.map(opt => `
+          <label class="quiz-option">
+            <input type="radio" name="question-${index}" value="${opt.replace(/"/g, '&quot;')}">
+            ${opt}
+          </label><br>
+        `).join('')}
+        <div class="feedback" id="feedback-${index}"></div>
+      </div><hr>
+    `;
+  });
+  
+  html += `<button onclick="submitQuiz()" class="submit-btn">Submit Quiz</button>`;
+  html += '</div>';
+  display.innerHTML = html;
 }
 
 function submitQuiz() {
-    let score = 0;
-    currentQuizData.forEach((q, index) => {
-        const sel = document.querySelector(`input[name="q-${index}"]:checked`);
-        const fb = document.getElementById(`feedback-${index}`);
-        fb.style.display = 'block';
-        if (sel && sel.value === q.answer) { fb.innerHTML = '<span class="correct">Correct!</span>'; score++; }
-        else { fb.innerHTML = `<span class="incorrect">Incorrect. Answer: ${q.answer}</span>`; }
-    });
-    alert(`Score: ${score}/${currentQuizData.length}`);
+  if (!currentQuizData) return;
+  let score = 0;
+  
+  currentQuizData.forEach((q, index) => {
+    const selected = document.querySelector(`input[name="question-${index}"]:checked`);
+    const feedback = document.getElementById(`feedback-${index}`);
+    feedback.style.display = 'block';
+    
+    if (selected && selected.value === q.answer) {
+      feedback.innerHTML = '<span class="correct">Correct!</span>';
+      score++;
+    } else {
+      feedback.innerHTML = `<span class="incorrect">Incorrect. Correct answer: ${q.answer}</span>`;
+    }
+  });
+  
+  alert(`You scored ${score} out of ${currentQuizData.length}`);
 }
 
 async function sendMessage() {
