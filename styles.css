@@ -20,6 +20,19 @@ body {
   overflow: hidden;
 }
 
+#you {
+  font-weight: 600px;
+}
+
+#activeDocTitle {
+  font-size: 18px;
+  font-weight: 750px;
+  font-size: 40px;
+  text-align: center;
+
+  color: var(--text-main);
+}
+
 .app-container {
   display: flex;
   height: 100vh;
