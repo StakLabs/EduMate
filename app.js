@@ -1,4 +1,5 @@
 const API_URL = "https://lumen-ai.onrender.com/ask";
+let lastIncorrectString = "";
 let subjects = JSON.parse(localStorage.getItem('eduMateData')) || {
     "General Workspace": { files: [], chatHistory: [], workspace: "" }
 };
@@ -105,6 +106,10 @@ async function runTool(type) {
         Do not include any intro, outro, or explanation.`;
     } else if (type === 'summary') {
         promptStr = "Provide a comprehensive summary of these materials.";
+    } else if (type === 'test') {
+        promptStr = `[CRITICAL: RETURN ONLY JSON] Create a quiz with a random of 20 to 25 questions. Your question or answer must not contain a html tag. Only return questions related to the uploaded files.
+        Format: [{"question": "...", "options": ["A", "B", "C", "D"], "answer": "text of correct option"}]
+        Do not include any intro, outro, or explanation.`
     } else {
         promptStr = "Create a detailed study plan.";
     }
@@ -120,11 +125,12 @@ async function runTool(type) {
         const data = await res.json();
         stopLoading();
 
-        if (type === 'quiz') {
+        if (type === 'quiz' || type === 'test') {
             const match = data.response.match(/\[[\s\S]*\]/);
             if (match) {
                 currentQuizData = JSON.parse(match[0]);
-                renderQuiz(currentQuizData);
+                if (type == 'test') renderQuiz(currentQuizData, true);
+                else renderQuiz(currentQuizData);
             }
         } else {
             const html = marked.parse(data.response);
@@ -304,7 +310,14 @@ function stopLoading() {
     clearInterval(loadingInterval);
 }
 
-function renderQuiz(quizData) {
+function renderQuiz(quizData, test) {
+  const chatPane = document.getElementById('chatPane');
+  if (test) {
+      document.body.classList.add('test-mode');
+      if (chatPane) chatPane.style.display = 'none';
+  } else {
+      document.body.classList.remove('test-mode');
+  }
   const display = document.getElementById('sourceDisplay');
   let html = '<div class="quiz-container">';
   
@@ -323,29 +336,136 @@ function renderQuiz(quizData) {
     `;
   });
   
-  html += `<button onclick="submitQuiz()" class="submit-btn">Submit Quiz</button>`;
+  html += `<button onclick="submitQuiz(${test ? true : false})" class="submit-btn">Submit ${test ? 'Test' : 'Quiz'}</button>`;
+  if (test) html += `<button onclick="window.location.reload()" class="exit-btn">Exit Test</button>`;
   html += '</div>';
   display.innerHTML = html;
 }
 
-function submitQuiz() {
+async function submitQuiz(test) {
   if (!currentQuizData) return;
   let score = 0;
-  
+  let incorrect = [];
+
+  let overallFeedbackDiv = document.getElementById('overall-quiz-feedback');
+  if (!overallFeedbackDiv) {
+    overallFeedbackDiv = document.createElement('div');
+    overallFeedbackDiv.id = 'overall-quiz-feedback';
+    document.querySelector('.quiz-container').appendChild(overallFeedbackDiv);
+  }
+  overallFeedbackDiv.innerHTML = ''; 
+
   currentQuizData.forEach((q, index) => {
     const selected = document.querySelector(`input[name="question-${index}"]:checked`);
     const feedback = document.getElementById(`feedback-${index}`);
     feedback.style.display = 'block';
-    
-    if (selected && selected.value === q.answer) {
+
+    const userAnswer = selected ? selected.value : "No answer provided";
+
+    if (selected && userAnswer === q.answer) {
       feedback.innerHTML = '<span class="correct">Correct!</span>';
       score++;
     } else {
       feedback.innerHTML = `<span class="incorrect">Incorrect. Correct answer: ${q.answer}</span>`;
+      incorrect.push({
+        'question': q.question,
+        'correct_answer': q.answer,
+        'user_answer': userAnswer
+      });
     }
   });
   
   alert(`You scored ${score} out of ${currentQuizData.length}`);
+  if (incorrect.length > 0) alert('Please wait for you custom feedback to load at the bottom of the workpace. Thank you.')
+
+  if (incorrect.length > 0) {
+    const thinkingId = "quiz-thinking-" + Date.now();
+    
+    overallFeedbackDiv.innerHTML = `
+      <div class="msg ai thinking" id="${thinkingId}" style="margin-top: 20px;">
+        <i id="${thinkingId}-status">Analyzing your incorrect answers...</i>
+      </div>
+    `;
+    
+    startLoading(`${thinkingId}-status`, true);
+
+    const formData = new FormData();
+    const selectedFiles = subjects[activeSubject].files.filter(f => f.selected);
+
+    lastIncorrectString = incorrect.map(item => 
+      `Question: ${item.question} | Correct Answer: ${item.correct_answer} | User Answer: ${item.user_answer}`
+    ).join('\n');
+
+    formData.append("prompt", `These are questions that the user got incorrect on a quiz. Please explain what they did wrong, how they can improve${test ? '.' : ' , and whether they would like a quiz with questions just like that for practice.'} Maximum 3 sentences, minimum 1. Here is what they got incorrect:\n${lastIncorrectString}`);
+    formData.append("model", selectedFiles.length > 0 ? "Lumen VI" : "Lumen V");
+    
+    if (selectedFiles.length > 0) {
+        const blob = await (await fetch(selectedFiles[0].data)).blob();
+        formData.append("file", blob, selectedFiles[0].name);
+    }
+
+    try {
+        const res = await fetch(API_URL, { method: "POST", body: formData });
+        const data = await res.json();
+        
+        stopLoading();
+        
+        overallFeedbackDiv.innerHTML = `
+          <div class="ai-quiz-feedback" style="margin-top: 20px; padding: 15px; border-radius: 8px; border-left: 4px solid #6200ee; background: #f4f0ff;">
+            <h4 style="margin-top: 0;">AI Tutor Feedback</h4>
+            <div>${marked.parse(data.response)}</div>
+            ${test ? '' : `<button onclick="generateTargetedQuiz()" class="primary-btn" style="margin-top: 15px; background: #6200ee; color: white; border: none; padding: 10px 15px; border-radius: 6px; cursor: pointer;">
+              Practice Weak Areas
+            </button>
+          `}</div
+        `;
+    } catch (err) {
+        stopLoading();
+        overallFeedbackDiv.innerHTML = "<div style='color: red; margin-top: 20px;'>Error generating AI feedback.</div>";
+    }
+  } else {
+    overallFeedbackDiv.innerHTML = "<div style='margin-top: 20px; color: green; font-weight: 500;'>Perfect score! No AI review needed.</div>";
+  }
+}
+async function generateTargetedQuiz() {
+    const selectedFiles = subjects[activeSubject].files.filter(f => f.selected);
+    if (selectedFiles.length === 0) return alert("Please select a source file first.");
+    
+    const display = document.getElementById('sourceDisplay');
+    startLoading('sourceDisplay', false);
+
+    const promptStr = `[CRITICAL: RETURN ONLY JSON] The user recently took a quiz and got the following concepts wrong:
+    
+    ${lastIncorrectString}
+    
+    Create a new practice quiz focusing ONLY on similar concepts to help them practice their weak areas. Generate between 3 and 7 questions. Your question or answer must not contain a html tag.
+    Format: [{"question": "...", "options": ["A", "B", "C", "D"], "answer": "text of correct option"}]
+    Do not include any intro, outro, or explanation. Return ONLY the JSON array.`;
+
+    const formData = new FormData();
+    formData.append("prompt", promptStr);
+    formData.append("model", "Lumen VI");
+    
+    const blob = await (await fetch(selectedFiles[0].data)).blob();
+    formData.append("file", blob, selectedFiles[0].name);
+
+    try {
+        const res = await fetch(API_URL, { method: "POST", body: formData });
+        const data = await res.json();
+        
+        stopLoading();
+
+        const match = data.response.match(/\[[\s\S]*\]/);
+        if (match) {
+            currentQuizData = JSON.parse(match[0]);
+            renderQuiz(currentQuizData);
+        } else {
+            display.innerHTML = "Error generating targeted quiz. The AI did not return a valid format.";
+        }
+    } catch (err) {
+        stopLoading();
+        display.innerHTML = "Error processing request.";
+    }
 }
 
 async function sendMessage() {
