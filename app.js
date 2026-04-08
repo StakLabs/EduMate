@@ -1,30 +1,3 @@
-let deferredPrompt;
-
-if ("serviceWorker" in navigator) {
-  window.addEventListener("load", () => {
-    navigator.serviceWorker.register("/sw.js");
-  });
-}
-
-window.addEventListener("beforeinstallprompt", e => {
-  e.preventDefault();
-  deferredPrompt = e;
-  const btn = document.getElementById("installBtn");
-  if (btn) btn.style.display = "block";
-});
-
-window.addEventListener("DOMContentLoaded", () => {
-  const btn = document.getElementById("installBtn");
-  if (!btn) return;
-  btn.addEventListener("click", async () => {
-    if (!deferredPrompt) return;
-    deferredPrompt.prompt();
-    await deferredPrompt.userChoice;
-    deferredPrompt = null;
-    btn.style.display = "none";
-  });
-});
-
 const API_URL = "https://lumen-ai.onrender.com/ask";
 let lastIncorrectString = "";
 let subjects = JSON.parse(localStorage.getItem('eduMateData')) || {
