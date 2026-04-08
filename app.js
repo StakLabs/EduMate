@@ -351,7 +351,7 @@ function submitQuiz() {
 async function sendMessage() {
     if(!activeSubject) return;
     const input = document.getElementById('userInput');
-    const msg = input.value.trim();
+    const msg = 'You: ' + input.value.trim();
     if (!msg) return;
     const selectedFiles = subjects[activeSubject].files.filter(f => f.selected);
     const workspace = document.getElementById('sourceDisplay').innerText;
