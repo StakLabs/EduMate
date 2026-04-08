@@ -1,3 +1,30 @@
+let deferredPrompt;
+
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/sw.js");
+  });
+}
+
+window.addEventListener("beforeinstallprompt", e => {
+  e.preventDefault();
+  deferredPrompt = e;
+  const btn = document.getElementById("installBtn");
+  if (btn) btn.style.display = "block";
+});
+
+window.addEventListener("DOMContentLoaded", () => {
+  const btn = document.getElementById("installBtn");
+  if (!btn) return;
+  btn.addEventListener("click", async () => {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    await deferredPrompt.userChoice;
+    deferredPrompt = null;
+    btn.style.display = "none";
+  });
+});
+
 const API_URL = "https://lumen-ai.onrender.com/ask";
 let lastIncorrectString = "";
 let subjects = JSON.parse(localStorage.getItem('eduMateData')) || {
@@ -427,6 +454,7 @@ async function submitQuiz(test) {
     overallFeedbackDiv.innerHTML = "<div style='margin-top: 20px; color: green; font-weight: 500;'>Perfect score! No AI review needed.</div>";
   }
 }
+
 async function generateTargetedQuiz() {
     const selectedFiles = subjects[activeSubject].files.filter(f => f.selected);
     if (selectedFiles.length === 0) return alert("Please select a source file first.");
