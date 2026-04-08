@@ -8,6 +8,11 @@
   --text-sub: #5f6368;
   --danger-red: #d93025;
 }
+body.test-mode .sidebar,
+body.test-mode .chat-pane,
+body.test-mode .canvas-header {
+    display: none !important;
+}
 
 * { box-sizing: border-box; }
 
