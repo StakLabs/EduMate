@@ -1,4 +1,4 @@
-const CACHE_NAME = "edumate-v1";
+/*const CACHE_NAME = "edumate-v1";
 
 self.addEventListener("install", e => {
   e.waitUntil(
