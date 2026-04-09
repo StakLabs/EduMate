@@ -6,8 +6,8 @@
   <title>EduMate - Notebook</title>
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <link rel="stylesheet" href="styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
   <link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500&family=Roboto:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#1a73e8">
 </head>
 <body>
@@ -66,7 +66,7 @@
           </button>
           <div id="toolsMenu" class="tools-menu">
             <!-- <button onclick="runTool('flashcards')">Generate Flashcards</button> -->
-            <button onclick="runTool('test')">Pressure Test</button>
+            <button class='premium' onclick="runTool('test')">Pressure Test</button>
             <button onclick="runTool('quiz')">Convert to Quiz</button>
             <button onclick="runTool('summary')">Generate Summary</button>
             <button onclick="runTool('studyplan')">Create Study Plan</button>
