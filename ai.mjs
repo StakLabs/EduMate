@@ -26,7 +26,7 @@ app.options('*', cors(corsOptions));
 app.use(express.json());
 
 // Initialize the new Google Gen AI SDK
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+const ai = new GoogleGenerativeAI({ apiKey: process.env.GEMINI_API_KEY });
 
 // Helper to determine the correct Gemini model
 function getModelName(model) {
