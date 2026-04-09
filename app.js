@@ -1,8 +1,9 @@
-const API_URL = "https://lumen-ai.onrender.com/ask";
+const API_URL = "https://edumate-r44q.onrender.com/ask";
 let lastIncorrectString = "";
 let subjects = JSON.parse(localStorage.getItem('eduMateData')) || {
     "General Workspace": { files: [], chatHistory: [], workspace: "" }
 };
+const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 let activeSubject = localStorage.getItem('activeSubject') || "General Workspace";
 
 let currentQuizData = null;
