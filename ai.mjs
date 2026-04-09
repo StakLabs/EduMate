@@ -26,10 +26,12 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 function getModelName(model) {
     const modelMap = {
-        'Lumen VI': 'gemini-3-flash',
-        'Lumen V': 'gemini-2.5-flash'
+        // Updated technical strings to valid API identifiers
+        'Lumen VI': 'gemini-1.5-flash', 
+        'Lumen V': 'gemini-1.5-flash-8b',
+        'Lumen Pro': 'gemini-1.5-pro'
     };
-    return modelMap[model] || 'gemini-2.5-flash';
+    return modelMap[model] || 'gemini-1.5-flash';
 }
 
 function getMimeType(file) {
@@ -61,6 +63,7 @@ app.post('/ask', upload.single('file'), async (req, res) => {
             generationConfig.responseMimeType = "application/json";
         }
 
+        // Initialize model with specific string and instructions
         const model = genAI.getGenerativeModel({ 
             model: modelToUse,
             systemInstruction: systemInstruction 
