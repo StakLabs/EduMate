@@ -17,11 +17,19 @@ function saveData() {
     if (activeSubject) localStorage.setItem('activeSubject', activeSubject);
 }
 
-function getTotalStorageSize() {
-    return encodeURI(JSON.stringify(subjects)).split(/%..|./).length - 1;
-}
-
 function init() {
+    if (!localStorage.getItem('edumateUser')) {
+        if (window.location.href === "https://staklabs.github.io/EduMate/") {
+            window.location.href = "https://staklabs.github.io/EduMate/Login/";
+        } else window.location.href = "l.html";
+    }
+
+    if (JSON.parse(localStorage.getItem('edumateUser')).tier != 'pay') {
+        document.querySelector('.premium').classList.add('pay-first');
+    } else {
+        document.querySelector('.logo').classList.add('plus');
+    }
+
     const keys = Object.keys(subjects);
     if (keys.length === 0) {
         activeSubject = null;
@@ -34,6 +42,11 @@ function init() {
 
 // Workspace Management Logic (Restored)
 function addNewSubject() {
+    if (JSON.parse(localStorage.getItem('edumateUser')).tier != 'pay') {
+        if (Object.keys(subjects).length >= 2) {
+            return Swal.fire("Free users can only have 2 workspaces. Please upgrade to premium for more workspaces.");
+        }
+    }
     let name = "New Workspace";
     let counter = 1;
     while (subjects[name]) {
@@ -69,6 +82,11 @@ function confirmDeleteSubject() {
 function uploadFiles() {
     const input = document.getElementById('fileInput');
     const MAX_BYTES = 4 * 1024 * 1024;
+    if (JSON.parse(localStorage.getItem('edumateUser')).tier != 'pay') {
+        if (input.files.length + subjects[activeSubject].files.length > 1) {
+            return Swal.fire("Free users have 1 file limit per workspace. Please upgrade to premium for more storage.");
+        }
+    }
     if (input.files.length > 0) {
         Array.from(input.files).forEach(file => {
             const reader = new FileReader();
@@ -96,7 +114,6 @@ async function runTool(type) {
     const selectedFiles = subjects[activeSubject].files.filter(f => f.selected);
     if (selectedFiles.length === 0) return alert("Select a file");
     const display = document.getElementById('sourceDisplay');
-    startLoading('sourceDisplay', false);
 
     let promptStr = "";
     if (type === 'quiz') {
@@ -107,12 +124,17 @@ async function runTool(type) {
     } else if (type === 'summary') {
         promptStr = "Provide a comprehensive summary of these materials.";
     } else if (type === 'test') {
+        if (JSON.parse(localStorage.getItem('edumateUser')).tier != 'pay') {
+            Swal.fire('Test generation is exclusive to premium users.');
+            return;
+        }
         promptStr = `[CRITICAL: RETURN ONLY JSON] Create a quiz with a random of 20 to 25 questions. Your question or answer must not contain a html tag. Only return questions related to the uploaded files.
         Format: [{"question": "...", "options": ["A", "B", "C", "D"], "answer": "text of correct option"}]
         Do not include any intro, outro, or explanation.`
     } else {
         promptStr = "Create a detailed study plan.";
     }
+    startLoading('sourceDisplay', false);
 
     const formData = new FormData();
     formData.append("prompt", promptStr);
@@ -413,7 +435,8 @@ async function submitQuiz(test) {
         overallFeedbackDiv.innerHTML = `
           <div class="ai-quiz-feedback" style="margin-top: 20px; padding: 15px; border-radius: 8px; border-left: 4px solid #6200ee; background: #f4f0ff;">
             <h4 style="margin-top: 0;">AI Tutor Feedback</h4>
-            <div>${marked.parse(data.response)}</div>
+            ${JSON.parse(localStorage.getItem('edumateUser')).tier === 'pay' ? '' : '<p>Unlock detailed feedback by upgrading to a premium plan.</p>'}
+            <div class="${JSON.parse(localStorage.getItem('edumateUser')).tier === 'pay' ? '' : 'locked'} prevent-select">${marked.parse(data.response)}</div>
             ${test ? '' : `<button onclick="generateTargetedQuiz()" class="primary-btn" style="margin-top: 15px; background: #6200ee; color: white; border: none; padding: 10px 15px; border-radius: 6px; cursor: pointer;">
               Practice Weak Areas
             </button>
@@ -429,13 +452,17 @@ async function submitQuiz(test) {
 }
 
 async function generateTargetedQuiz() {
+    if (JSON.parse(localStorage.getItem('edumateUser')).tier != 'pay') {
+        Swal.fire('Targeted quiz generation is exclusive to premium users.');
+        return;
+    }
     const selectedFiles = subjects[activeSubject].files.filter(f => f.selected);
     if (selectedFiles.length === 0) return alert("Please select a source file first.");
     
     const display = document.getElementById('sourceDisplay');
     startLoading('sourceDisplay', false);
 
-    const promptStr = `[CRITICAL: RETURN ONLY JSON] The user recently took a quiz and got the following concepts wrong:
+    const promptStr = `The user recently took a quiz and got the following concepts wrong:
     
     ${lastIncorrectString}
     
@@ -470,6 +497,7 @@ async function generateTargetedQuiz() {
 }
 
 async function sendMessage() {
+    var premium = true;
     if(!activeSubject) return;
     const input = document.getElementById('userInput');
     const msg = 'You: ' + input.value.trim();
@@ -477,12 +505,21 @@ async function sendMessage() {
     const selectedFiles = subjects[activeSubject].files.filter(f => f.selected);
     const workspace = document.getElementById('sourceDisplay').innerText;
     subjects[activeSubject].chatHistory.push({ role: "user", text: msg });
+    if (JSON.parse(localStorage.getItem('edumateUser')).tier != 'pay') {
+        if (subjects[activeSubject].chatHistory.filter(m => m.role === 'user').length > 5) {
+            Swal.fire("Responses will now be short and slow. Upgrade to premium for unlimited access to the AI's full capabilities.");
+            subjects[activeSubject].chatHistory.pop();
+            document.querySelector('.chat-title').innerText = "AI Chat (Limited Access)";
+            premium = false
+        }
+    }
     renderChat();
     input.value = "";
     const thinkingId = "thinking-" + Date.now();
     document.getElementById('chatBox').innerHTML += `<div class="msg ai thinking" id="${thinkingId}"><i id="${thinkingId}-status">Thinking...</i></div>`;
     startLoading(`${thinkingId}-status`, true);
-    const fullPrompt = `Context: ${workspace}\nHistory: ${subjects[activeSubject].chatHistory.slice(-5).map(h => h.text).join("\n")}\nQuestion: ${msg}`;
+    premium ? await delay(0) : await delay(3000);
+    const fullPrompt = `${premium ? 'Long and detailed response.' : 'Very short responses only.'} Context: ${workspace}\nHistory: ${subjects[activeSubject].chatHistory.slice(-5).map(h => h.text).join("\n")}\nQuestion: ${msg}`;
     const formData = new FormData();
     formData.append("prompt", fullPrompt);
     formData.append("model", selectedFiles.length > 0 ? "Lumen VI" : "Lumen V");
