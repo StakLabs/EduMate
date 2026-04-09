@@ -1,0 +1,18 @@
+{
+  "name": "edumate-backend",
+  "version": "1.0.0",
+  "description": "Backend API for EduMate",
+  "main": "ai.mjs",
+  "type": "module",
+  "scripts": {
+    "start": "node ai.mjs",
+    "dev": "node --watch ai.mjs"
+  },
+  "dependencies": {
+    "@google/genai": "^0.1.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.1",
+    "multer": "^1.4.5-lts.1"
+  }
+}
