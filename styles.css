@@ -440,3 +440,24 @@ body {
 }
 
 @keyframes spin { 100% { transform: rotate(360deg); } }
+
+.pay-first {
+  display: flex;
+  color: darkgoldenrod;
+  background-color: gold !important;
+}
+
+.plus {
+  color: goldenrod !important;
+}
+
+.locked {
+   color: transparent;
+   text-shadow: 0 0 5px rgba(0,0,0,0.5);
+}
+
+.prevent-select {
+  -webkit-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+}
