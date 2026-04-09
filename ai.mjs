@@ -26,12 +26,12 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 function getModelName(model) {
     const modelMap = {
-        // Updated technical strings to valid API identifiers
-        'Lumen VI': 'gemini-1.5-flash', 
-        'Lumen V': 'gemini-1.5-flash-8b',
-        'Lumen Pro': 'gemini-1.5-pro'
+        // Updated for 2026 stable model IDs
+        'Lumen VI': 'gemini-2.5-flash', 
+        'Lumen V': 'gemini-2.5-flash-lite',
+        'Lumen Pro': 'gemini-3-flash-preview' // Use preview for the newest Gemini 3 features
     };
-    return modelMap[model] || 'gemini-1.5-flash';
+    return modelMap[model] || 'gemini-2.5-flash';
 }
 
 function getMimeType(file) {
