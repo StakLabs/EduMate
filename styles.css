@@ -461,3 +461,32 @@ body {
   -ms-user-select: none;
   user-select: none;
 }
+
+/* Enhanced Answer Highlighting */
+.highlight {
+    background-color: #fff700ab;        /* Medium weight for emphasis */
+    padding: 1px 4px;         /* Tight padding */
+    border-radius: 7px;       /* Subtle rounding */
+    text-decoration: none;    /* Ensures no underline */
+    transition: background-color 0.2s ease;
+}
+
+.highlight:hover {
+    background-color: #d2e3fc; /* Darker blue on hover */
+    cursor: default;
+}
+
+@keyframes highlightDraw {
+  to {
+    transform: scaleX(1);
+  }
+}
+
+
+.settings {
+  background: transparent;
+  border: none;
+  color: var(--text-sub);
+  cursor: pointer;
+  font-size: 20px;
+}
