@@ -252,11 +252,11 @@ function renderFileList() {
     if(!activeSubject) return;
     subjects[activeSubject].files.forEach((file, index) => {
         list.innerHTML += `
-      <div class="file-item">
+    <div class="file-item">
         <input type="checkbox" ${file.selected ? 'checked' : ''} onchange="toggleFileSelection(${index})">
         <span class="file-name">📄 ${file.name}</span>
         <button class="remove-file-btn" onclick="removeFile(${index})">×</button>
-      </div>
+    </div>
     `;
     });
 }
@@ -282,13 +282,31 @@ function clearChat() {
 function renderChat() {
     const chatBox = document.getElementById('chatBox');
     chatBox.innerHTML = "";
-    if(!activeSubject) return;
+    if (!activeSubject) return;
+
     subjects[activeSubject].chatHistory.forEach(msg => {
         const div = document.createElement('div');
         div.className = `msg ${msg.role}`;
-        div.innerHTML = msg.role === 'user' ? msg.text : marked.parse(msg.text);
+
+        if (msg.role === 'user') {
+            div.innerHTML = marked.parse(msg.text || "");
+        } else {
+            let text = msg.text || "";
+            let answers = msg.answers || [];
+
+            if (Array.isArray(answers) && answers.length > 0) {
+                answers.forEach(ans => {
+                    if (!ans) return;
+                    const escaped = ans.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                    const regex = new RegExp(`(${escaped})`, 'gi');
+                    text = text.replace(regex, `<span class="highlight">$1</span>`);
+                });
+            }
+            div.innerHTML = marked.parse(text);
+        }
         chatBox.appendChild(div);
     });
+
     chatBox.scrollTop = chatBox.scrollHeight;
 }
 
@@ -334,51 +352,51 @@ function stopLoading() {
 }
 
 function renderQuiz(quizData, test) {
-  const chatPane = document.getElementById('chatPane');
-  if (test) {
-      document.body.classList.add('test-mode');
-      if (chatPane) chatPane.style.display = 'none';
-  } else {
-      document.body.classList.remove('test-mode');
-  }
-  const display = document.getElementById('sourceDisplay');
-  let html = '<div class="quiz-container">';
-  
-  quizData.forEach((q, index) => {
+const chatPane = document.getElementById('chatPane');
+if (test) {
+    document.body.classList.add('test-mode');
+    if (chatPane) chatPane.style.display = 'none';
+} else {
+    document.body.classList.remove('test-mode');
+}
+const display = document.getElementById('sourceDisplay');
+let html = '<div class="quiz-container">';
+
+quizData.forEach((q, index) => {
     html += `
-      <div class="quiz-question" id="q-${index}">
+    <div class="quiz-question" id="q-${index}">
         <p><b>Q${index + 1}: ${q.question}</b></p>
         ${q.options.map(opt => `
-          <label class="quiz-option">
+        <label class="quiz-option">
             <input type="radio" name="question-${index}" value="${opt.replace(/"/g, '&quot;')}">
             ${opt}
-          </label><br>
+        </label><br>
         `).join('')}
         <div class="feedback" id="feedback-${index}"></div>
-      </div><hr>
+    </div><hr>
     `;
-  });
-  
-  html += `<button onclick="submitQuiz(${test ? true : false})" class="submit-btn">Submit ${test ? 'Test' : 'Quiz'}</button>`;
-  if (test) html += `<button onclick="window.location.reload()" class="exit-btn">Exit Test</button>`;
-  html += '</div>';
-  display.innerHTML = html;
+});
+
+html += `<button onclick="submitQuiz(${test ? true : false})" class="submit-btn">Submit ${test ? 'Test' : 'Quiz'}</button>`;
+if (test) html += `<button onclick="window.location.reload()" class="exit-btn">Exit Test</button>`;
+html += '</div>';
+display.innerHTML = html;
 }
 
 async function submitQuiz(test) {
-  if (!currentQuizData) return;
-  let score = 0;
-  let incorrect = [];
+if (!currentQuizData) return;
+let score = 0;
+let incorrect = [];
 
-  let overallFeedbackDiv = document.getElementById('overall-quiz-feedback');
-  if (!overallFeedbackDiv) {
+let overallFeedbackDiv = document.getElementById('overall-quiz-feedback');
+if (!overallFeedbackDiv) {
     overallFeedbackDiv = document.createElement('div');
     overallFeedbackDiv.id = 'overall-quiz-feedback';
     document.querySelector('.quiz-container').appendChild(overallFeedbackDiv);
-  }
-  overallFeedbackDiv.innerHTML = ''; 
+}
+overallFeedbackDiv.innerHTML = ''; 
 
-  currentQuizData.forEach((q, index) => {
+currentQuizData.forEach((q, index) => {
     const selected = document.querySelector(`input[name="question-${index}"]:checked`);
     const feedback = document.getElementById(`feedback-${index}`);
     feedback.style.display = 'block';
@@ -386,28 +404,28 @@ async function submitQuiz(test) {
     const userAnswer = selected ? selected.value : "No answer provided";
 
     if (selected && userAnswer === q.answer) {
-      feedback.innerHTML = '<span class="correct">Correct!</span>';
-      score++;
+    feedback.innerHTML = '<span class="correct">Correct!</span>';
+    score++;
     } else {
-      feedback.innerHTML = `<span class="incorrect">Incorrect. Correct answer: ${q.answer}</span>`;
-      incorrect.push({
+    feedback.innerHTML = `<span class="incorrect">Incorrect. Correct answer: ${q.answer}</span>`;
+    incorrect.push({
         'question': q.question,
         'correct_answer': q.answer,
         'user_answer': userAnswer
-      });
+    });
     }
-  });
-  
-  alert(`You scored ${score} out of ${currentQuizData.length}`);
-  if (incorrect.length > 0) alert('Please wait for you custom feedback to load at the bottom of the workpace. Thank you.')
+});
 
-  if (incorrect.length > 0) {
+alert(`You scored ${score} out of ${currentQuizData.length}`);
+if (incorrect.length > 0) alert('Please wait for you custom feedback to load at the bottom of the workpace. Thank you.')
+
+if (incorrect.length > 0) {
     const thinkingId = "quiz-thinking-" + Date.now();
     
     overallFeedbackDiv.innerHTML = `
-      <div class="msg ai thinking" id="${thinkingId}" style="margin-top: 20px;">
+    <div class="msg ai thinking" id="${thinkingId}" style="margin-top: 20px;">
         <i id="${thinkingId}-status">Analyzing your incorrect answers...</i>
-      </div>
+    </div>
     `;
     
     startLoading(`${thinkingId}-status`, true);
@@ -416,7 +434,7 @@ async function submitQuiz(test) {
     const selectedFiles = subjects[activeSubject].files.filter(f => f.selected);
 
     lastIncorrectString = incorrect.map(item => 
-      `Question: ${item.question} | Correct Answer: ${item.correct_answer} | User Answer: ${item.user_answer}`
+    `Question: ${item.question} | Correct Answer: ${item.correct_answer} | User Answer: ${item.user_answer}`
     ).join('\n');
 
     formData.append("prompt", `These are questions that the user got incorrect on a quiz. Please explain what they did wrong, how they can improve${test ? '.' : ' , and whether they would like a quiz with questions just like that for practice.'} Maximum 3 sentences, minimum 1. Here is what they got incorrect:\n${lastIncorrectString}`);
@@ -434,22 +452,22 @@ async function submitQuiz(test) {
         stopLoading();
         
         overallFeedbackDiv.innerHTML = `
-          <div class="ai-quiz-feedback" style="margin-top: 20px; padding: 15px; border-radius: 8px; border-left: 4px solid #6200ee; background: #f4f0ff;">
+        <div class="ai-quiz-feedback" style="margin-top: 20px; padding: 15px; border-radius: 8px; border-left: 4px solid #6200ee; background: #f4f0ff;">
             <h4 style="margin-top: 0;">AI Tutor Feedback</h4>
             ${JSON.parse(localStorage.getItem('edumateUser')).tier === 'pay' ? '' : '<p>Unlock detailed feedback by upgrading to a premium plan.</p>'}
             <div class="${JSON.parse(localStorage.getItem('edumateUser')).tier === 'pay' ? '' : 'locked'} prevent-select">${marked.parse(data.response)}</div>
             ${test ? '' : `<button onclick="generateTargetedQuiz()" class="primary-btn" style="margin-top: 15px; background: #6200ee; color: white; border: none; padding: 10px 15px; border-radius: 6px; cursor: pointer;">
-              Practice Weak Areas
+            Practice Weak Areas
             </button>
-          `}</div
+        `}</div
         `;
     } catch (err) {
         stopLoading();
         overallFeedbackDiv.innerHTML = "<div style='color: red; margin-top: 20px;'>Error generating AI feedback.</div>";
     }
-  } else {
+} else {
     overallFeedbackDiv.innerHTML = "<div style='margin-top: 20px; color: green; font-weight: 500;'>Perfect score! No AI review needed.</div>";
-  }
+}
 }
 
 async function generateTargetedQuiz() {
@@ -497,47 +515,120 @@ async function generateTargetedQuiz() {
     }
 }
 
+function openSettings() {
+    Swal.fire({
+        title: 'Hard Reset Data',
+        text: 'This will clear all your workspaces, files, and chat history. This action cannot be undone. Only use this if the AI is not recieving your files. Are you sure?',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#d33',
+        cancelButtonColor: '#3085d6',
+        confirmButtonText: 'Yes, reset everything!'
+    }).then((result) => {
+            if (result.isConfirmed) {
+                localStorage.clear();
+                window.location.reload();
+            }
+        }
+    );
+}
+
 async function sendMessage() {
-    var premium = true;
-    if(!activeSubject) return;
+    let premium = true;
+    if (!activeSubject) return;
+
     const input = document.getElementById('userInput');
-    const msg = 'You: ' + input.value.trim();
-    if (!msg) return;
+    const raw = input.value.trim();
+    if (!raw) return;
+
+    const msg = 'You: ' + raw;
     const selectedFiles = subjects[activeSubject].files.filter(f => f.selected);
     const workspace = document.getElementById('sourceDisplay').innerText;
-    subjects[activeSubject].chatHistory.push({ role: "user", text: msg });
-    if (JSON.parse(localStorage.getItem('edumateUser')).tier != 'pay') {
-        if (subjects[activeSubject].chatHistory.filter(m => m.role === 'user').length > 5) {
+
+    if (JSON.parse(localStorage.getItem('edumateUser')).tier !== 'pay') {
+        const userMsgs = subjects[activeSubject].chatHistory.filter(m => m.role === 'user').length;
+        if (userMsgs >= 5) {
             Swal.fire("Responses will now be short and slow. Upgrade to premium for unlimited access to the AI's full capabilities.");
-            subjects[activeSubject].chatHistory.pop();
             document.querySelector('.chat-title').innerText = "AI Chat (Limited Access)";
-            premium = false
+            premium = false;
         }
     }
+
+    subjects[activeSubject].chatHistory.push({ role: "user", text: msg });
     renderChat();
     input.value = "";
+
     const thinkingId = "thinking-" + Date.now();
-    document.getElementById('chatBox').innerHTML += `<div class="msg ai thinking" id="${thinkingId}"><i id="${thinkingId}-status">Thinking...</i></div>`;
+    const chatBox = document.getElementById('chatBox');
+    const thinkingDiv = document.createElement('div');
+    thinkingDiv.className = "msg ai thinking";
+    thinkingDiv.id = thinkingId;
+    thinkingDiv.innerHTML = `<i id="${thinkingId}-status">Thinking...</i>`;
+    chatBox.appendChild(thinkingDiv);
+    chatBox.scrollTop = chatBox.scrollHeight;
+    
     startLoading(`${thinkingId}-status`, true);
-    premium ? await delay(0) : await delay(3000);
-    const fullPrompt = `${premium ? 'Long and detailed response.' : 'Very short responses only.'} Context: ${workspace}\nHistory: ${subjects[activeSubject].chatHistory.slice(-5).map(h => h.text).join("\n")}\nQuestion: ${msg}`;
+
+    if (!premium) await delay(3000);
+
+    const fullPrompt = `
+${premium ? 'Long and detailed response.' : 'Very short responses only.'}
+You are an AI study assistant.
+ALWAYS respond in JSON format.
+Response format:
+{
+"text": "",
+"answers": []
+}
+Rules:
+- "text" must be natural and human.
+- "answers" must be extracted from the text.
+- Only add things to the answers array that are directly mentioned in the text.
+- Only add things to the answers array if you provided an explaination or answer of some sort.
+- Do not output anything outside JSON.
+- 
+Context: ${workspace}
+History:
+${subjects[activeSubject].chatHistory.slice(-5).map(h => h.text).join("\n")}
+Question:
+${msg}`;
+
     const formData = new FormData();
     formData.append("prompt", fullPrompt);
     formData.append("model", selectedFiles.length > 0 ? "Lumen VI" : "Lumen V");
+
     if (selectedFiles.length > 0) {
         const blob = await (await fetch(selectedFiles[0].data)).blob();
         formData.append("file", blob, selectedFiles[0].name);
     }
+
     try {
         const res = await fetch(API_URL, { method: "POST", body: formData });
         const data = await res.json();
         stopLoading();
-        subjects[activeSubject].chatHistory.push({ role: "ai", text: data.response });
+
+        let aiData = data.response;
+        if (typeof aiData === "string") {
+            try {
+                const jsonMatch = aiData.match(/\{[\s\S]*\}/);
+                aiData = JSON.parse(jsonMatch ? jsonMatch[0] : aiData);
+            } catch {
+                aiData = { text: aiData, answers: [] };
+            }
+        }
+
+        subjects[activeSubject].chatHistory.push({
+            role: "ai",
+            text: aiData.text || "",
+            answers: aiData.answers || []
+        });
+
         renderChat();
         saveData();
     } catch (err) {
         stopLoading();
-        document.getElementById(thinkingId).innerText = "Error.";
+        const errDiv = document.getElementById(thinkingId);
+        if (errDiv) errDiv.innerText = "Error processing request.";
     }
 }
 
