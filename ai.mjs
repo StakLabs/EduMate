@@ -108,8 +108,9 @@ app.post('/ask', upload.single('file'), async (req, res) => {
     }
 });
 
-app.post('/websearch', async (req, res) => {
+app.post('/websearch', upload.single('file'), async (req, res) => {
     try {
+        // Now req.body will correctly contain the prompt sent via FormData
         const { prompt, model: requestedModel = 'Lumen VI' } = req.body;
 
         if (!prompt) {
@@ -118,7 +119,6 @@ app.post('/websearch', async (req, res) => {
 
         const modelToUse = getModelName(requestedModel);
         
-        // Initialize model with the Google Search tool
         const model = genAI.getGenerativeModel({ 
             model: modelToUse,
             tools: [{ googleSearch: {} }] 
@@ -128,7 +128,6 @@ app.post('/websearch', async (req, res) => {
         const response = await result.response;
         const replyText = response.text();
 
-        // Note: You can also extract grounding metadata if you want to show sources
         return res.json({ 
             response: replyText,
             sources: response.candidates[0]?.groundingMetadata?.searchEntryPoint?.htmlContent || null
