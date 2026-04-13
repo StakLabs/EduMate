@@ -1,545 +1,697 @@
-:root {
-  --bg-app: #f0f4f9;
-  --bg-sidebar: #ffffff;
-  --bg-canvas: #ffffff;
-  --border-color: #dee2e6;
-  --accent-blue: #1a73e8;
-  --text-main: #1f1f1f;
-  --text-sub: #5f6368;
-  --danger-red: #d93025;
-}
-body.test-mode .sidebar,
-body.test-mode .chat-pane,
-body.test-mode .canvas-header {
-    display: none !important;
-}
+const API_URL = "https://edumate-r44q.onrender.com";
+let lastIncorrectString = "";
+let subjects = JSON.parse(localStorage.getItem('eduMateData')) || {
+    "General Workspace": { files: [], chatHistory: [], workspace: "" }
+};
+const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+let activeSubject = localStorage.getItem('activeSubject') || "General Workspace";
 
-* { box-sizing: border-box; }
+let currentQuizData = null;
+let loadingInterval = null;
+let pendingToolType = null;
+let targetSubjectForContext = null;
 
-body {
-  margin: 0;
-  font-family: 'Google Sans', 'Roboto', sans-serif;
-  background-color: var(--bg-app);
-  color: var(--text-main);
-  height: 100vh;
-  overflow: hidden;
-}
+let responseConfig = {
+    web: false,
+    concise: false
+};
 
-#you {
-  font-weight: 600px;
-}
 
-#activeDocTitle {
-  font-size: 18px;
-  font-weight: 750px;
-  font-size: 40px;
-  text-align: center;
 
-  color: var(--text-main);
+document.getElementById('includeSources').addEventListener('change', (e) => {
+    responseConfig.web = e.target.checked;
+});
+
+document.getElementById('conciseMode').addEventListener('change', (e) => {
+    responseConfig.concise = e.target.checked;
+});
+
+const loadingMessages = ["Analyzing document", "Synthesizing information", "Connecting the dots", "Generating content"];
+
+function saveData() {
+    localStorage.setItem('eduMateData', JSON.stringify(subjects));
+    if (activeSubject) localStorage.setItem('activeSubject', activeSubject);
 }
 
-.app-container {
-  display: flex;
-  height: 100vh;
-  width: 100vw;
+function init() {
+    if (!localStorage.getItem('edumateUser')) {
+        if (window.location.href === "https://staklabs.github.io/EduMate/") {
+            window.location.href = "https://staklabs.github.io/EduMate/Login/";
+        } else window.location.href = "l.html";
+    }
+
+    if (JSON.parse(localStorage.getItem('edumateUser')).tier != 'pay') {
+        document.querySelector('.premium').classList.add('pay-first');
+    } else {
+        document.querySelector('.logo').classList.add('plus');
+    }
+
+    const keys = Object.keys(subjects);
+    if (keys.length === 0) {
+        activeSubject = null;
+        showEmptyState();
+    } else {
+        if (!subjects[activeSubject]) activeSubject = keys[0];
+        switchSubject(activeSubject);
+    }
 }
 
-.sidebar {
-  width: 280px;
-  background: var(--bg-sidebar);
-  border-right: 1px solid var(--border-color);
-  display: flex;
-  flex-direction: column;
-  padding: 20px;
+// Workspace Management Logic (Restored)
+function addNewSubject() {
+    if (JSON.parse(localStorage.getItem('edumateUser')).tier != 'pay') {
+        if (Object.keys(subjects).length >= 2) {
+            return Swal.fire("Free users can only have 2 workspaces. Please upgrade to premium for more workspaces.");
+        }
+    }
+    let name = "New Workspace";
+    let counter = 1;
+    while (subjects[name]) {
+        name = `New Workspace ${counter}`;
+        counter++;
+    }
+    subjects[name] = { files: [], chatHistory: [], workspace: "" };
+    switchSubject(name);
 }
 
-.logo {
-  font-size: 24px;
-  margin: 0 0 28px 4px;
-  color: var(--accent-blue);
-  font-weight: 500;
+function confirmRename() {
+    const newName = document.getElementById('renameInput').value.trim();
+    if (!newName || newName === targetSubjectForContext) return closeRenameModal();
+    if (subjects[newName]) return alert("Name exists.");
+    subjects[newName] = subjects[targetSubjectForContext];
+    delete subjects[targetSubjectForContext];
+    if (activeSubject === targetSubjectForContext) activeSubject = newName;
+    saveData();
+    renderSubjectList();
+    closeRenameModal();
 }
 
-.sidebar-spacer {
-  height: 48px;
+function confirmDeleteSubject() {
+    delete subjects[targetSubjectForContext];
+    const remaining = Object.keys(subjects);
+    activeSubject = remaining.length > 0 ? remaining[0] : null;
+    saveData();
+    if (activeSubject) switchSubject(activeSubject); else showEmptyState();
+    closeDeleteModal();
 }
 
-.subject-tabs {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin: 12px 0;
+// File Upload Logic (Restored 4MB Limit)
+function uploadFiles() {
+    const input = document.getElementById('fileInput');
+    const MAX_BYTES = 4 * 1024 * 1024;
+    if (JSON.parse(localStorage.getItem('edumateUser')).tier != 'pay') {
+        if (input.files.length + subjects[activeSubject].files.length > 1) {
+            return Swal.fire("Free users have 1 file limit per workspace. Please upgrade to premium for more storage.");
+        }
+    }
+    if (input.files.length > 0) {
+        Array.from(input.files).forEach(file => {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const newData = e.target.result;
+                if (getTotalStorageSize() + newData.length > MAX_BYTES) {
+                    return alert("Exceeds 4MB limit.");
+                }
+                subjects[activeSubject].files.push({
+                    name: file.name,
+                    data: newData,
+                    type: file.type,
+                    selected: true
+                });
+                renderFileList();
+                saveData();
+            };
+            reader.readAsDataURL(file);
+        });
+    }
 }
 
-.subject-btn-main {
-  width: 100%;
-  padding: 10px 12px;
-  text-align: left;
-  background: transparent;
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
-  font-size: 14px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  transition: background 0.2s;
+function toggleResponseMenu() {
+    const menu = document.getElementById('responseMenu');
+    if (menu.style.display === 'block') {
+        menu.style.display = 'none';
+    } else {
+        menu.style.display = 'block';
+    }
 }
 
-.subject-btn-main:hover {
-  background: #f1f3f4;
-}
+window.addEventListener('click', function(e) {
+  const toolsMenu = document.getElementById('toolsMenu');
+  const responseMenu = document.getElementById('responseMenu');
+  const toolsBtn = document.querySelector('.tools-btn');
 
-.subject-btn-main.active {
-  background: #e8f0fe;
-  color: var(--accent-blue);
-  font-weight: 500;
-}
-
-.add-source-btn {
-  width: 100%;
-  padding: 12px;
-  border-radius: 24px;
-  border: 1px solid var(--border-color);
-  background: white;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  font-size: 14px;
-  font-weight: 500;
-}
-
-.add-source-btn:hover { background: #f8f9fa; }
-
-.section-label {
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--text-sub);
-  margin: 16px 0 8px 8px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.file-list {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.file-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  border-radius: 8px;
-  font-size: 14px;
-}
-
-.file-item:hover { background: #f1f3f4; }
-
-.file-name {
-  flex: 1;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.remove-file-btn {
-  background: none;
-  border: none;
-  color: var(--danger-red);
-  cursor: pointer;
-  font-size: 16px;
-}
-
-.canvas {
-  flex: 1;
-  padding: 24px;
-  overflow-y: auto; /* Keeps the scrollbar on the main canvas area */
-  display: flex;
-  flex-direction: column;
-  align-items: center; /* Centers the paper */
-}
-
-.canvas-paper {
-  width: 100%;
-  max-width: 850px;
-  height: auto; /* Changed from min-height: 100% to allow growth */
-  min-height: fit-content; 
-  background: var(--bg-canvas);
-  border-radius: 16px;
-  border: 1px solid var(--border-color);
-  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-  display: flex;
-  flex-direction: column;
-  margin-bottom: 40px; /* Gives some breathing room at the bottom */
-}
-
-.canvas-content {
-  padding: 24px 48px 48px;
-  line-height: 1.6;
-  height: auto; /* Ensures the article expands */
-  overflow: visible; /* Prevents internal clipping */
-}
-
-.chat-pane {
-  width: 400px;
-  background: #ffffff;
-  border-left: 1px solid var(--border-color);
-  display: flex;
-  flex-direction: column;
-}
-
-.chat-header {
-  padding: 16px 20px;
-  border-bottom: 1px solid var(--border-color);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.chat-title {
-  font-weight: 500;
-  font-size: 16px;
-}
-
-.clear-chat-btn {
-  background: transparent;
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  padding: 6px 12px;
-  font-size: 12px;
-  cursor: pointer;
-  color: var(--text-sub);
-  transition: all 0.2s;
-}
-
-.clear-chat-btn:hover {
-  background: #fff0f0;
-  border-color: #f5c2c2;
-  color: var(--danger-red);
-}
-
-.chat-messages {
-  flex: 1;
-  padding: 20px;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.msg {
-  max-width: 85%;
-  padding: 10px 16px;
-  border-radius: 18px;
-  font-size: 14px;
-  line-height: 1.4;
-  word-wrap: break-word;
-}
-
-.msg.ai {
-  align-self: flex-start;
-  background: #f1f3f4;
-  border-bottom-left-radius: 4px;
-}
-
-.msg.user {
-  align-self: flex-end;
-  background: #e8f0fe;
-  color: #174ea6;
-  border-bottom-right-radius: 4px;
-  white-space: normal;
-}
-
-.chat-input-area { padding: 20px; }
-
-.input-pill {
-  background: #f1f3f4;
-  border-radius: 28px;
-  padding: 6px 14px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-#userInput {
-  flex: 1;
-  border: none;
-  background: transparent;
-  outline: none;
-  padding: 10px 4px;
-  font-family: inherit;
-  font-size: 14px;
-}
-
-.send-btn {
-  background: transparent;
-  border: none;
-  color: var(--accent-blue);
-  cursor: pointer;
-  display: flex;
-}
-
-.tools-container { position: relative; }
-
-.tools-btn {
-  background: transparent;
-  border: none;
-  color: var(--text-sub);
-  cursor: pointer;
-  display: flex;
-}
-
-.tools-menu {
-  display: none;
-  position: absolute;
-  bottom: 40px;
-  left: 0;
-  background: white;
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-  z-index: 100;
-  width: 180px;
-  overflow: hidden;
-}
-
-.tools-menu.active { display: block; }
-
-.tools-menu button {
-  width: 100%;
-  padding: 12px 16px;
-  text-align: left;
-  background: none;
-  border: none;
-  font-size: 13px;
-  cursor: pointer;
-}
-
-.tools-menu button:hover { background: #f8f9fa; color: var(--accent-blue); }
-
-.context-menu {
-  display: none;
-  position: absolute;
-  background: white;
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-  z-index: 3000;
-  width: 180px;
-  padding: 6px 0;
-}
-
-.context-menu button {
-  width: 100%;
-  padding: 10px 16px;
-  text-align: left;
-  background: none;
-  border: none;
-  font-size: 14px;
-  cursor: pointer;
-}
-
-.context-menu button:hover { background: #f1f3f4; color: var(--accent-blue); }
-.context-menu button.danger { color: var(--danger-red); }
-.context-menu button.danger:hover { background: #fff0f0; }
-
-.empty-state {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  color: var(--text-sub);
-  text-align: center;
-}
-
-.empty-state h2 {
-  color: var(--text-main);
-  margin: 0 0 12px 0;
-  font-weight: 500;
-}
-
-.empty-state p {
-  margin: 0 0 24px 0;
-  font-size: 15px;
-}
-
-.modal-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 4000;
-}
-
-.modal-content {
-  background: white;
-  padding: 24px;
-  border-radius: 12px;
-  width: 340px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
-}
-
-.modal-content h3 { margin: 0 0 12px 0; font-size: 18px; }
-
-.modal-content p {
-  font-size: 14px;
-  color: var(--text-sub);
-  margin-bottom: 20px;
-  line-height: 1.4;
-}
-
-.modal-content input {
-  width: 100%;
-  padding: 12px;
-  margin-bottom: 20px;
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  font-size: 14px;
-}
-
-.modal-actions { display: flex; justify-content: flex-end; gap: 10px; }
-
-.modal-actions button {
-  padding: 8px 16px;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 14px;
-  font-weight: 500;
-}
-
-.cancel-btn { background: #f1f3f4; color: var(--text-main); }
-.primary-btn { background: var(--accent-blue); color: white; }
-.danger-btn { background: var(--danger-red); color: white; }
-
-.loader-container {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 40px;
-  gap: 16px;
-}
-
-.spinner {
-  width: 32px;
-  height: 32px;
-  border: 3px solid #f3f3f3;
-  border-top: 3px solid var(--accent-blue);
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-}
-
-@keyframes spin { 100% { transform: rotate(360deg); } }
-
-.pay-first {
-  display: flex;
-  color: darkgoldenrod;
-  background-color: gold !important;
-}
-
-.plus {
-  color: goldenrod !important;
-}
-
-.locked {
-   color: transparent;
-   text-shadow: 0 0 5px rgba(0,0,0,0.5);
-}
-
-.prevent-select {
-  -webkit-user-select: none;
-  -ms-user-select: none;
-  user-select: none;
-}
-
-/* Enhanced Answer Highlighting */
-.highlight {
-    background-color: #d2e3fc;        /* Medium weight for emphasis */
-    padding: 1px 4px;         /* Tight padding */
-    border-radius: 7px;       /* Subtle rounding */
-    text-decoration: none;    /* Ensures no underline */
-    transition: background-color 0.2s ease;
-}
-
-.highlight:hover {
-    background-color: #d2e3fc; /* Darker blue on hover */
-    cursor: default;
-}
-
-@keyframes highlightDraw {
-  to {
-    transform: scaleX(1);
+  if (!e.target.closest('.tools-container')) {
+    if (toolsMenu) toolsMenu.classList.remove('active');
+    if (responseMenu) responseMenu.classList.remove('active');
   }
+});
+
+async function runTool(type) {
+    const selectedFiles = subjects[activeSubject].files.filter(f => f.selected);
+    if (selectedFiles.length === 0) return alert("Select a file");
+    const display = document.getElementById('sourceDisplay');
+
+    let promptStr = "";
+    if (type === 'quiz') {
+        // Forceful JSON prompt to prevent "Analysis of HTML" chatter
+        promptStr = `[CRITICAL: RETURN ONLY JSON] Create a quiz with a random of 3 to 15 questions. Your question or answer must not contain a html tag. Only return questions related to the uploaded files.
+        Format: [{"question": "...", "options": ["A", "B", "C", "D"], "answer": "text of correct option"}]
+        Do not include any intro, outro, or explanation.`;
+    } else if (type === 'summary') {
+        promptStr = "Provide a comprehensive summary of these materials.";
+    } else if (type === 'test') {
+        if (JSON.parse(localStorage.getItem('edumateUser')).tier != 'pay') {
+            Swal.fire('Test generation is exclusive to premium users.');
+            return;
+        }
+        promptStr = `[CRITICAL: RETURN ONLY JSON] Create a quiz with a random of 20 to 25 questions. Your question or answer must not contain a html tag. Only return questions related to the uploaded files.
+        Format: [{"question": "...", "options": ["A", "B", "C", "D"], "answer": "text of correct option"}]
+        Do not include any intro, outro, or explanation.`
+    } else {
+        promptStr = "Create a detailed study plan.";
+    }
+    startLoading('sourceDisplay', false);
+
+    const formData = new FormData();
+    formData.append("prompt", promptStr);
+    formData.append("model", "Lumen VI");
+    const blob = await (await fetch(selectedFiles[0].data)).blob();
+    formData.append("file", blob, selectedFiles[0].name);
+
+    try {
+        const res = await fetch(API_URL, { method: "POST", body: formData });
+        const data = await res.json();
+        stopLoading();
+
+        if (type === 'quiz' || type === 'test') {
+            const match = data.response.match(/\[[\s\S]*\]/);
+            if (match) {
+                currentQuizData = JSON.parse(match[0]);
+                if (type == 'test') renderQuiz(currentQuizData, true);
+                else renderQuiz(currentQuizData);
+            }
+        } else {
+            const html = marked.parse(data.response);
+            display.innerHTML = html;
+            subjects[activeSubject].workspace = html;
+            saveData();
+        }
+    } catch (err) {
+        stopLoading();
+        display.innerHTML = "Error processing request.";
+    }
 }
 
-
-.settings {
-  background: transparent;
-  border: none;
-  color: var(--text-sub);
-  cursor: pointer;
-  font-size: 20px;
+// ... All other original functions (renderChat, renderFileList, sendMessage) remain identical to your original code ...
+function getTotalStorageSize() {
+    return encodeURI(JSON.stringify(subjects)).split(/%..|./).length - 1;
 }
 
-/* Information Callout */
-.info {
-  background: none;
-  border: none;
+document.addEventListener('click', () => {
+    document.getElementById('contextMenu').style.display = 'none';
+});
+
+function handleContextMenu(e, name) {
+    e.preventDefault();
+    targetSubjectForContext = name;
+    const menu = document.getElementById('contextMenu');
+    menu.style.display = 'block';
+    menu.style.left = `${e.pageX}px`;
+    menu.style.top = `${e.pageY}px`;
 }
 
-/* Ensure the container for buttons stays horizontal */
-.tools-container {
-  display: flex;
-  gap: 4px; /* Space between the two tool buttons */
-  position: relative;
+function renderSubjectList() {
+    const list = document.getElementById('subjectList');
+    list.innerHTML = "";
+    Object.keys(subjects).forEach(sub => {
+        const btn = document.createElement('button');
+        btn.innerText = sub;
+        btn.className = `subject-btn-main ${sub === activeSubject ? 'active' : ''}`;
+        btn.onclick = () => switchSubject(sub);
+        btn.oncontextmenu = (e) => handleContextMenu(e, sub);
+        list.appendChild(btn);
+    });
 }
 
-/* Adjusting the tools menu position to account for the second button if needed */
-.tools-menu {
-  left: 0;
-  /* ... existing styles ... */
-}
-/* Update or Add this to styles.css */
-.response-menu {
-  display: none;
-  position: absolute;
-  bottom: 40px;
-  left: 0;
-  background: white;
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-  z-index: 100;
-  width: 180px;
-  overflow: hidden;
+function openRenameModal() {
+    document.getElementById('renameInput').value = targetSubjectForContext;
+    document.getElementById('renameModal').style.display = 'flex';
+    document.getElementById('renameInput').focus();
 }
 
-.response-option {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 12px 16px;
-  font-size: 13px;
-  cursor: pointer;
-  transition: background 0.2s;
+function closeRenameModal() {
+    document.getElementById('renameModal').style.display = 'none';
 }
 
-.response-option:hover {
-  background: #f8f9fa;
-  color: var(--accent-blue);
+function openDeleteModal() {
+    document.getElementById('deleteModal').style.display = 'flex';
+    document.getElementById('confirmDeleteBtn').onclick = confirmDeleteSubject;
 }
 
-.response-option input {
-  cursor: pointer;
-  accent-color: var(--accent-blue);
+function closeDeleteModal() {
+    document.getElementById('deleteModal').style.display = 'none';
 }
+
+function switchSubject(name) {
+    activeSubject = name;
+    hideEmptyState();
+    const data = subjects[activeSubject];
+    document.getElementById('activeDocTitle').innerText = name;
+    document.getElementById('sourceDisplay').innerHTML = data.workspace || "";
+    renderFileList();
+    renderChat();
+    renderSubjectList();
+    saveData();
+}
+
+function showEmptyState() {
+    document.getElementById('emptyState').style.display = 'flex';
+    document.getElementById('canvasPaper').style.display = 'none';
+    document.getElementById('chatPane').style.display = 'none';
+    document.getElementById('sourcesHeader').style.display = 'none';
+    document.getElementById('sourcesSection').style.display = 'none';
+    renderSubjectList();
+}
+
+function hideEmptyState() {
+    document.getElementById('emptyState').style.display = 'none';
+    document.getElementById('canvasPaper').style.display = 'flex';
+    document.getElementById('chatPane').style.display = 'flex';
+    document.getElementById('sourcesHeader').style.display = 'block';
+    document.getElementById('sourcesSection').style.display = 'block';
+}
+
+function renderFileList() {
+    const list = document.getElementById('fileList');
+    list.innerHTML = "";
+    if(!activeSubject) return;
+    subjects[activeSubject].files.forEach((file, index) => {
+        list.innerHTML += `
+    <div class="file-item">
+        <input type="checkbox" ${file.selected ? 'checked' : ''} onchange="toggleFileSelection(${index})">
+        <span class="file-name">📄 ${file.name}</span>
+        <button class="remove-file-btn" onclick="removeFile(${index})">×</button>
+    </div>
+    `;
+    });
+}
+
+function toggleFileSelection(index) {
+    subjects[activeSubject].files[index].selected = !subjects[activeSubject].files[index].selected;
+    saveData();
+}
+
+function removeFile(index) {
+    subjects[activeSubject].files.splice(index, 1);
+    renderFileList();
+    saveData();
+}
+
+function clearChat() {
+    if(!activeSubject) return;
+    subjects[activeSubject].chatHistory = [];
+    renderChat();
+    saveData();
+}
+
+function renderChat() {
+    const chatBox = document.getElementById('chatBox');
+    chatBox.innerHTML = "";
+    if (!activeSubject) return;
+
+    subjects[activeSubject].chatHistory.forEach(msg => {
+        const div = document.createElement('div');
+        div.className = `msg ${msg.role}`;
+
+        if (msg.role === 'user') {
+            div.innerHTML = marked.parse(msg.text || "");
+        } else {
+            let text = msg.text || "";
+            let answers = msg.answers || [];
+
+            if (Array.isArray(answers) && answers.length > 0) {
+                answers.forEach(ans => {
+                    if (!ans) return;
+                    const escaped = ans.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                    const regex = new RegExp(`(${escaped})`, 'gi');
+                    text = text.replace(regex, `<span class="highlight">$1</span>`);
+                });
+            }
+            div.innerHTML = marked.parse(text);
+        }
+        chatBox.appendChild(div);
+    });
+
+    chatBox.scrollTop = chatBox.scrollHeight;
+}
+
+function toggleTools() {
+    document.getElementById('toolsMenu').classList.toggle('active');
+}
+
+function openCountModal(type) {
+    toggleTools();
+    pendingToolType = type;
+    document.getElementById('countModal').style.display = 'flex';
+}
+
+function closeCountModal() {
+    document.getElementById('countModal').style.display = 'none';
+    pendingToolType = null;
+}
+
+function confirmToolCount() {
+    const count = parseInt(document.getElementById('itemCount').value);
+    if (isNaN(count) || count < 3 || count > 15) return alert("Enter 3-15");
+    closeCountModal();
+    runTool(pendingToolType, count);
+}
+
+function startLoading(elementId, isChat = false) {
+    const el = document.getElementById(elementId);
+    let index = 0;
+    if (!isChat) {
+        el.innerHTML = `<div class="loader-container"><div class="spinner"></div><div id="loader-text" class="loader-text">${responseConfig.web ? 'Searching the web...' : loadingMessages[0]}</div></div>`;
+    } else {
+        el.innerText = loadingMessages[0];
+    }
+    loadingInterval = setInterval(() => {
+        index = (index + 1) % loadingMessages.length;
+        const textEl = isChat ? el : document.getElementById('loader-text');
+        if (textEl) textEl.innerText = loadingMessages[index];
+    }, 2500);
+}
+
+function stopLoading() {
+    clearInterval(loadingInterval);
+}
+
+function renderQuiz(quizData, test) {
+const chatPane = document.getElementById('chatPane');
+if (test) {
+    document.body.classList.add('test-mode');
+    if (chatPane) chatPane.style.display = 'none';
+} else {
+    document.body.classList.remove('test-mode');
+}
+const display = document.getElementById('sourceDisplay');
+let html = '<div class="quiz-container">';
+
+quizData.forEach((q, index) => {
+    html += `
+    <div class="quiz-question" id="q-${index}">
+        <p><b>Q${index + 1}: ${q.question}</b></p>
+        ${q.options.map(opt => `
+        <label class="quiz-option">
+            <input type="radio" name="question-${index}" value="${opt.replace(/"/g, '&quot;')}">
+            ${opt}
+        </label><br>
+        `).join('')}
+        <div class="feedback" id="feedback-${index}"></div>
+    </div><hr>
+    `;
+});
+
+html += `<button onclick="submitQuiz(${test ? true : false})" class="submit-btn">Submit ${test ? 'Test' : 'Quiz'}</button>`;
+if (test) html += `<button onclick="window.location.reload()" class="exit-btn">Exit Test</button>`;
+html += '</div>';
+display.innerHTML = html;
+}
+
+async function submitQuiz(test) {
+if (!currentQuizData) return;
+let score = 0;
+let incorrect = [];
+
+let overallFeedbackDiv = document.getElementById('overall-quiz-feedback');
+if (!overallFeedbackDiv) {
+    overallFeedbackDiv = document.createElement('div');
+    overallFeedbackDiv.id = 'overall-quiz-feedback';
+    document.querySelector('.quiz-container').appendChild(overallFeedbackDiv);
+}
+overallFeedbackDiv.innerHTML = ''; 
+
+currentQuizData.forEach((q, index) => {
+    const selected = document.querySelector(`input[name="question-${index}"]:checked`);
+    const feedback = document.getElementById(`feedback-${index}`);
+    feedback.style.display = 'block';
+
+    const userAnswer = selected ? selected.value : "No answer provided";
+
+    if (selected && userAnswer === q.answer) {
+    feedback.innerHTML = '<span class="correct">Correct!</span>';
+    score++;
+    } else {
+    feedback.innerHTML = `<span class="incorrect">Incorrect. Correct answer: ${q.answer}</span>`;
+    incorrect.push({
+        'question': q.question,
+        'correct_answer': q.answer,
+        'user_answer': userAnswer
+    });
+    }
+});
+
+alert(`You scored ${score} out of ${currentQuizData.length}`);
+if (incorrect.length > 0) alert('Please wait for you custom feedback to load at the bottom of the workspace. Thank you.')
+
+if (incorrect.length > 0) {
+    const thinkingId = "quiz-thinking-" + Date.now();
+    
+    overallFeedbackDiv.innerHTML = `
+    <div class="msg ai thinking" id="${thinkingId}" style="margin-top: 20px;">
+        <i id="${thinkingId}-status">Analyzing your incorrect answers...</i>
+    </div>
+    `;
+    
+    startLoading(`${thinkingId}-status`, true);
+
+    const formData = new FormData();
+    const selectedFiles = subjects[activeSubject].files.filter(f => f.selected);
+
+    lastIncorrectString = incorrect.map(item => 
+    `Question: ${item.question} | Correct Answer: ${item.correct_answer} | User Answer: ${item.user_answer}`
+    ).join('\n');
+
+    formData.append("prompt", `These are questions that the user got incorrect on a quiz. Please explain what they did wrong, how they can improve${test ? '.' : ' , and whether they would like a quiz with questions just like that for practice.'} Maximum 3 sentences, minimum 1. Here is what they got incorrect:\n${lastIncorrectString}`);
+    formData.append("model", selectedFiles.length > 0 ? "Lumen VI" : "Lumen V");
+    
+    if (selectedFiles.length > 0) {
+        const blob = await (await fetch(selectedFiles[0].data)).blob();
+        formData.append("file", blob, selectedFiles[0].name);
+    }
+
+    try {
+        const res = await fetch(API_URL, { method: "POST", body: formData });
+        const data = await res.json();
+        
+        stopLoading();
+        
+        overallFeedbackDiv.innerHTML = `
+        <div class="ai-quiz-feedback" style="margin-top: 20px; padding: 15px; border-radius: 8px; border-left: 4px solid #6200ee; background: #f4f0ff;">
+            <h4 style="margin-top: 0;">AI Tutor Feedback</h4>
+            ${JSON.parse(localStorage.getItem('edumateUser')).tier === 'pay' ? '' : '<p>Unlock detailed feedback by upgrading to a premium plan.</p>'}
+            <div class="${JSON.parse(localStorage.getItem('edumateUser')).tier === 'pay' ? '' : 'locked'} prevent-select">${marked.parse(data.response)}</div>
+            ${test ? '' : `<button onclick="generateTargetedQuiz()" class="primary-btn" style="margin-top: 15px; background: #6200ee; color: white; border: none; padding: 10px 15px; border-radius: 6px; cursor: pointer;">
+            Practice Weak Areas
+            </button>
+        `}</div
+        `;
+    } catch (err) {
+        stopLoading();
+        overallFeedbackDiv.innerHTML = "<div style='color: red; margin-top: 20px;'>Error generating AI feedback.</div>";
+    }
+} else {
+    overallFeedbackDiv.innerHTML = `<div style='margin-top: 20px; color: green; font-weight: 500;'>Perfect score! No AI review needed.</div>
+    <button onclick="generateTargetedQuiz()" class="primary-btn" style="margin-top: 15px; background: #6200ee; color: white; border: none; padding: 10px 15px; border-radius: 6px; cursor: pointer;">
+            Practice Weak Areas
+            </button>`;
+}
+}
+
+async function generateTargetedQuiz() {
+    if (JSON.parse(localStorage.getItem('edumateUser')).tier != 'pay') {
+        Swal.fire('Targeted quiz generation is exclusive to premium users.');
+        return;
+    }
+    const selectedFiles = subjects[activeSubject].files.filter(f => f.selected);
+    if (selectedFiles.length === 0) return alert("Please select a source file first.");
+    
+    const display = document.getElementById('sourceDisplay');
+    startLoading('sourceDisplay', false);
+
+    const promptStr = `The user recently took a quiz and got the following concepts wrong:
+    
+    ${lastIncorrectString}
+    
+    Create a new practice quiz focusing ONLY on similar concepts to help them practice their weak areas. Generate between 3 and 7 questions. Your question or answer must not contain a html tag.
+    Format: [{"question": "...", "options": ["A", "B", "C", "D"], "answer": "text of correct option"}]
+    Do not include any intro, outro, or explanation. Return ONLY the JSON array.`;
+
+    const formData = new FormData();
+    formData.append("prompt", promptStr);
+    formData.append("model", "Lumen VI");
+    
+    const blob = await (await fetch(selectedFiles[0].data)).blob();
+    formData.append("file", blob, selectedFiles[0].name);
+
+    try {
+        const res = await fetch(API_URL, { method: "POST", body: formData });
+        const data = await res.json();
+        
+        stopLoading();
+
+        const match = data.response.match(/\[[\s\S]*\]/);
+        if (match) {
+            currentQuizData = JSON.parse(match[0]);
+            renderQuiz(currentQuizData);
+        } else {
+            display.innerHTML = "Error generating targeted quiz. The AI did not return a valid format.";
+        }
+    } catch (err) {
+        stopLoading();
+        display.innerHTML = "Error processing request.";
+    }
+}
+
+function openSettings() {
+    Swal.fire({
+        title: 'Hard Reset Data',
+        text: 'This will clear all your workspaces, files, and chat history. This action cannot be undone. Only use this if the AI is not recieving your files. Are you sure?',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#d33',
+        cancelButtonColor: '#3085d6',
+        confirmButtonText: 'Yes, reset everything!',
+        backdrop: `
+    rgba(0,0,123,0.4)
+    url("nyan-cat.gif")
+    left top
+    no-repeat
+  `
+    }).then((result) => {
+            if (result.isConfirmed) {
+                localStorage.clear();
+                window.location.reload();
+            }
+        }
+    );
+}
+
+function showSourceInfo() {
+    Swal.fire({
+        title: 'Info Centre',
+        showCancelButton: true,
+        cancelButtonText: 'How to upload a website'
+    }).then((result) => {        if (result.isDismissed) {
+            Swal.fire({
+                title: 'How to upload a website',   
+                text: 'To upload a website, you can use the command Ctrl+s or Cmd+s on that site, and click save to save the webpage as a .html file. Then, upload that file to EduMate to have the AI analyze its content.'
+            });
+        }
+    });
+}
+
+async function sendMessage() {
+    let premium = true;
+    if (!activeSubject) return;
+
+    const input = document.getElementById('userInput');
+    const raw = input.value.trim();
+    if (!raw) return;
+
+    const msg = 'You: ' + raw;
+    const selectedFiles = subjects[activeSubject].files.filter(f => f.selected);
+    const workspace = document.getElementById('sourceDisplay').innerText;
+
+    if (JSON.parse(localStorage.getItem('edumateUser')).tier !== 'pay') {
+        const userMsgs = subjects[activeSubject].chatHistory.filter(m => m.role === 'user').length;
+        if (userMsgs >= 5) {
+            Swal.fire("Responses will now be short and slow. Upgrade to premium for unlimited access to the AI's full capabilities.");
+            document.querySelector('.chat-title').innerText = "AI Chat (Limited Access)";
+            premium = false;
+        }
+    }
+
+    subjects[activeSubject].chatHistory.push({ role: "user", text: msg });
+    renderChat();
+    input.value = "";
+
+    const thinkingId = "thinking-" + Date.now();
+    const chatBox = document.getElementById('chatBox');
+    const thinkingDiv = document.createElement('div');
+    thinkingDiv.className = "msg ai thinking";
+    thinkingDiv.id = thinkingId;
+    thinkingDiv.innerHTML = `<i id="${thinkingId}-status">Thinking...</i>`;
+    chatBox.appendChild(thinkingDiv);
+    chatBox.scrollTop = chatBox.scrollHeight;
+    
+    startLoading(`${thinkingId}-status`, true);
+
+    if (!premium) await delay(3000);
+
+    const fullPrompt = `
+    ${responseConfig.concise ? 'Very short responses only.' : (premium ? 'Long and detailed response.' : 'Short responses only.')}
+${premium ? 'Long and detailed response.' : 'Very short responses only.'}
+You are an AI study assistant.
+ALWAYS respond in JSON format.
+Response format:
+{
+"text": "",
+"answers": []
+}
+Rules:
+- "text" must be natural and human.
+- "answers" must be extracted from the text.
+- Only add things to the answers array that are directly mentioned in the text.
+- Only add things to the answers array if you provided an explaination or answer of some sort.
+- Do not output anything outside JSON.
+- 
+Context: ${workspace}
+History:
+${subjects[activeSubject].chatHistory.slice(-5).map(h => h.text).join("\n")}
+Question:
+${msg}`;
+
+    const formData = new FormData();
+    formData.append("prompt", fullPrompt);
+    formData.append("model", selectedFiles.length > 0 ? "Lumen VI" : "Lumen V");
+
+    if (selectedFiles.length > 0) {
+        const blob = await (await fetch(selectedFiles[0].data)).blob();
+        formData.append("file", blob, selectedFiles[0].name);
+    }
+
+    try {
+        const res = await fetch(`${API_URL}/${responseConfig.web ? 'websearch' : 'ask'}`, { method: "POST", body: formData });
+        const data = await res.json();
+        stopLoading();
+
+        let aiData = data.response;
+        if (typeof aiData === "string") {
+            try {
+                const jsonMatch = aiData.match(/\{[\s\S]*\}/);
+                aiData = JSON.parse(jsonMatch ? jsonMatch[0] : aiData);
+            } catch {
+                aiData = { text: aiData, answers: [] };
+            }
+        }
+
+        subjects[activeSubject].chatHistory.push({
+            role: "ai",
+            text: aiData.text || "",
+            answers: aiData.answers || []
+        });
+
+        renderChat();
+        saveData();
+    } catch (err) {
+        stopLoading();
+        const errDiv = document.getElementById(thinkingId);
+        if (errDiv) errDiv.innerText = "Error processing request.";
+    }
+}
+
+document.getElementById('userInput')?.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') sendMessage();
+});
+
+init();
