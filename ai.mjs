@@ -108,6 +108,41 @@ app.post('/ask', upload.single('file'), async (req, res) => {
     }
 });
 
+app.post('/websearch', async (req, res) => {
+    try {
+        const { prompt, model: requestedModel = 'Lumen VI' } = req.body;
+
+        if (!prompt) {
+            return res.status(400).json({ error: 'Please provide a search prompt.' });
+        }
+
+        const modelToUse = getModelName(requestedModel);
+        
+        // Initialize model with the Google Search tool
+        const model = genAI.getGenerativeModel({ 
+            model: modelToUse,
+            tools: [{ googleSearch: {} }] 
+        });
+
+        const result = await model.generateContent(prompt);
+        const response = await result.response;
+        const replyText = response.text();
+
+        // Note: You can also extract grounding metadata if you want to show sources
+        return res.json({ 
+            response: replyText,
+            sources: response.candidates[0]?.groundingMetadata?.searchEntryPoint?.htmlContent || null
+        });
+
+    } catch (error) {
+        console.error('Search API Error:', error);
+        return res.status(500).json({ 
+            error: 'Failed to perform web search.', 
+            details: error.message 
+        });
+    }
+});
+
 app.get('/ping', (req, res) => {
     res.status(200).send('Pong');
 });
