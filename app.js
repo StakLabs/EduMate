@@ -1,4 +1,9 @@
-const API_URL = "https://edumate-r44q.onrender.com";
+Swal.fire({
+    title: 'Notices and Updates',
+    html: 'We have added website attachments, so now you can upload a webpage for analysis (Open info centre in upper right corner to learn how). <br><br>We have also added web search, concise mode, and follow-up questions in the new configure menu. Try them out and let us know what you think!',
+});
+
+const API_URL = "https://edumate-r44q.onrender.com/ask";
 let lastIncorrectString = "";
 let subjects = JSON.parse(localStorage.getItem('eduMateData')) || {
     "General Workspace": { files: [], chatHistory: [], workspace: "" }
@@ -13,7 +18,8 @@ let targetSubjectForContext = null;
 
 let responseConfig = {
     web: false,
-    concise: false
+    concise: false,
+    followUp: false
 };
 
 
@@ -24,6 +30,10 @@ document.getElementById('includeSources').addEventListener('change', (e) => {
 
 document.getElementById('conciseMode').addEventListener('change', (e) => {
     responseConfig.concise = e.target.checked;
+});
+
+document.getElementById('followUp').addEventListener('change', (e) => {
+    responseConfig.followUp = e.target.checked;
 });
 
 const loadingMessages = ["Analyzing document", "Synthesizing information", "Connecting the dots", "Generating content"];
@@ -280,6 +290,77 @@ function hideEmptyState() {
     document.getElementById('sourcesSection').style.display = 'block';
 }
 
+function getFileEmoji(file) {
+    if (!file) return '📄';
+
+    const type = file.type || '';
+    const name = file.name || '';
+    const ext = name.split('.').pop()?.toLowerCase();
+
+    const mimeMap = {
+        'text/html': '🌐',
+        'text/css': '🎨',
+        'application/javascript': '💻',
+        'text/javascript': '💻',
+        'application/json': '💻',
+        'text/plain': '📄',
+        'text/markdown': '📝',
+
+        'application/pdf': '📄',
+
+        'image/jpeg': '🖼️',
+        'image/png': '🖼️',
+        'image/gif': '🖼️',
+        'image/webp': '🖼️',
+        'image/svg+xml': '🖼️',
+
+        'video/mp4': '🎬',
+        'video/webm': '🎬',
+
+        'audio/mpeg': '🎵',
+        'audio/wav': '🎵',
+
+        'application/zip': '🗜️',
+        'application/x-zip-compressed': '🗜️'
+    };
+
+    const extMap = {
+        js: '💻',
+        css: '🎨',
+        html: '🌐',
+        json: '💻',
+        md: '📝',
+        txt: '📄',
+
+        py: '🐍',
+        cs: '💜',
+        java: '☕',
+        cpp: '⚙️',
+        c: '⚙️',
+        ts: '🔷',
+
+        jpeg: '🖼️',
+        jpg: '🖼️',
+        png: '🖼️',
+
+        mp4: '🎬',
+        mp3: '🎵',
+
+        zip: '🗜️',
+        rar: '🗜️'
+    };
+
+    if (mimeMap[type]) return mimeMap[type];
+    if (extMap[ext]) return extMap[ext];
+
+    if (type.startsWith('image/')) return '🖼️';
+    if (type.startsWith('video/')) return '🎬';
+    if (type.startsWith('audio/')) return '🎵';
+    if (type.startsWith('text/')) return '📄';
+
+    return '📁';
+}
+
 function renderFileList() {
     const list = document.getElementById('fileList');
     list.innerHTML = "";
@@ -288,9 +369,9 @@ function renderFileList() {
         list.innerHTML += `
     <div class="file-item">
         <input type="checkbox" ${file.selected ? 'checked' : ''} onchange="toggleFileSelection(${index})">
-        <span class="file-name">📄 ${file.name}</span>
+        <span title="${(file.name).replace('.html', '')}" class="file-name">${getFileEmoji(file)} ${(file.name).replace('.html', '')}</span>
         <button class="remove-file-btn" onclick="removeFile(${index})">×</button>
-    </div>
+    </div> 
     `;
     });
 }
@@ -631,6 +712,7 @@ async function sendMessage() {
     const fullPrompt = `
     ${responseConfig.concise ? 'Very short responses only.' : (premium ? 'Long and detailed response.' : 'Short responses only.')}
 ${premium ? 'Long and detailed response.' : 'Very short responses only.'}
+${responseConfig.followUp ? 'At the end of your response, you must ask a follow-up question, like "Would you like to ..."' : 'Do not ask a follow-up question.'}
 You are an AI study assistant.
 ALWAYS respond in JSON format.
 Response format:
@@ -644,7 +726,10 @@ Rules:
 - Only add things to the answers array that are directly mentioned in the text.
 - Only add things to the answers array if you provided an explaination or answer of some sort.
 - Do not output anything outside JSON.
-- 
+- Answers array should only be 1 to 2 words per answer, recommended to only have 1 answer
+- Prefferably, ONLY HAVE 1 ANSWER in the answers array
+- If there is an uploaded file, then when providing a response, reference the file like this: [filename.mimetype]
+- When a html file is uploaded, it means that the user wants you to analyze the content of that webpage, not the source code. So when referencing the content of the webpage, use [filename] in your response
 Context: ${workspace}
 History:
 ${subjects[activeSubject].chatHistory.slice(-5).map(h => h.text).join("\n")}
@@ -661,7 +746,7 @@ ${msg}`;
     }
 
     try {
-        const res = await fetch(`${API_URL}/${responseConfig.web ? 'websearch' : 'ask'}`, { method: "POST", body: formData });
+        const res = await fetch(`${responseConfig.web ? 'https://edumate-r44q.onrender.com/websearch' : API_URL}`, { method: "POST", body: formData });
         const data = await res.json();
         stopLoading();
 
