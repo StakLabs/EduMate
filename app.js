@@ -1,7 +1,12 @@
-Swal.fire({
-    title: 'Notices and Updates',
-    html: 'We have added website attachments, so now you can upload a webpage for analysis (Open info centre in upper right corner to learn how). <br><br>We have also added web search, concise mode, and follow-up questions in the new configure menu. Try them out and let us know what you think!',
-});
+async function notices() {
+    await delay(1000);
+    if (checkNewDay()) {
+        Swal.fire({
+            title: 'Notices and Updates',
+            html: 'We have added website attachments, so now you can upload a webpage for analysis (Open info centre in upper right corner to learn how). <br><br>We have also added web search, concise mode, and follow-up questions in the new configure menu. Try them out and let us know what you think!',
+        });
+    }
+}
 
 const API_URL = "https://edumate-r44q.onrender.com/ask";
 let lastIncorrectString = "";
@@ -272,6 +277,43 @@ function switchSubject(name) {
     renderSubjectList();
     saveData();
 }
+function checkNewDay() {
+  const today = new Date().toDateString();
+  const lastSavedDate = localStorage.getItem('lastVisitDate');
+
+  if (!lastSavedDate) {
+    localStorage.setItem('lastVisitDate', today);
+    return true;
+  }
+  if (lastSavedDate !== today) {
+    localStorage.setItem('lastVisitDate', today);
+    const diff = new Date(today) - new Date(lastSavedDate);
+    return diff >= 24 * 60 * 60 * 1000;
+  }
+  return false;
+}
+
+function streak() {
+  let streakData = JSON.parse(localStorage.getItem('streak'));
+  const isNewDay = checkNewDay();
+
+  if (!streakData) {
+    streakData = { currentStreak: 1 };
+    localStorage.setItem('streak', JSON.stringify(streakData));
+
+    Swal.fire(`Congrats! You've started a 1 day streak 🔥`);
+    return;
+  }
+  if (isNewDay) {
+    streakData.currentStreak += 1;
+    localStorage.setItem('streak', JSON.stringify(streakData));
+    Swal.fire(`Congrats on adding to your streak! You're on ${streakData.currentStreak} days 🔥`);
+  }
+  console.log(streakData);
+}
+
+streak();
+
 
 function showEmptyState() {
     document.getElementById('emptyState').style.display = 'flex';
