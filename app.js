@@ -27,8 +27,6 @@ let responseConfig = {
     followUp: false
 };
 
-
-
 document.getElementById('includeSources').addEventListener('change', (e) => {
     responseConfig.web = e.target.checked;
 });
@@ -449,16 +447,16 @@ function renderChat() {
             div.innerHTML = marked.parse(msg.text || "");
         } else {
             let text = msg.text || "";
-            let answers = msg.answers || [];
+            let answers = msg.highlights || [];
 
-            if (Array.isArray(answers) && answers.length > 0) {
-                answers.forEach(ans => {
-                    if (!ans) return;
-                    const escaped = ans.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                    const regex = new RegExp(`(${escaped})`, 'gi');
-                    text = text.replace(regex, `<span class="highlight">$1</span>`);
-                });
+            if (Array.isArray(answers) && answers.length > 0 && answers[0]) {
+                const firstAnswer = answers[0];
+                const escaped = firstAnswer.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                
+                const regex = new RegExp(`(${escaped})`, 'i'); 
+                text = text.replace(regex, `<span class="highlight">$1</span>`);
             }
+            
             div.innerHTML = marked.parse(text);
         }
         chatBox.appendChild(div);
@@ -713,6 +711,44 @@ function showSourceInfo() {
     });
 }
 
+async function confirmTakeover() {
+    Swal.fire({
+        title: 'AI Takeover',
+        text: 'Are you sure you want Lumen to completely takeover?',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#d33',
+        cancelButtonColor: '#3085d6',
+        confirmButtonText: 'Yes, take over!'
+    }).then((result) => {
+        if (result.isConfirmed) {
+            commenceTakeover(false, false,true, 0);
+        }
+    });
+
+}
+
+function randomQuestion() {
+    const selectedFiles = subjects[activeSubject].files.filter(f => f.selected);
+    if (!selectedFiles.length) return alert("Select a file");
+
+    const shouldTrigger = Math.random() < 0.1;
+
+    if (shouldTrigger) {
+        Swal.fire("Wait while we generate a surprise question for you. Try answering it before continuing.");
+        commenceTakeover(false);
+    } else {
+        console.log("No question this time");
+    }
+}
+randomQuestion();
+
+function extractJSON(text) {
+    const match = text.match(/\{[\s\S]*\}/);
+    if (!match) throw new Error("No JSON found");
+    return match[0];
+}
+
 async function sendMessage() {
     let premium = true;
     if (!activeSubject) return;
@@ -756,25 +792,28 @@ async function sendMessage() {
 ${premium ? 'Long and detailed response.' : 'Very short responses only.'}
 ${responseConfig.followUp ? 'At the end of your response, you must ask a follow-up question, like "Would you like to ..."' : 'Do not ask a follow-up question.'}
 You are an AI study assistant.
-ALWAYS respond in JSON format.
-Response format:
+
+You MUST respond in JSON format:
 {
-"text": "",
-"answers": []
+  "text": "",
+  "highlights": [""]
 }
-Rules:
-- "text" must be natural and human.
-- "answers" must be extracted from the text.
-- Only add things to the answers array that are directly mentioned in the text.
-- Only add things to the answers array if you provided an explaination or answer of some sort.
+
+STRICT RULES:
+- You MUST always include at least ONE highlight.
+- The highlights array should be what you consider to be highlighted text from the response that is most relevant to the user's question. It should be a substring of the "text" field.
+- DO NOT leave the highlight array empty.
+- Highlight maximum of 15 words
+- If unsure, still generate the best possible highlight.
+- "text" must be natural and helpful.
+- "highlights" must match the text.
 - Do not output anything outside JSON.
-- Answers array should only be 1 to 2 words per answer, recommended to only have 1 answer
-- Prefferably, ONLY HAVE 1 ANSWER in the answers array
-- If there is an uploaded file, then when providing a response, reference the file like this: [filename.mimetype]
-- When a html file is uploaded, it means that the user wants you to analyze the content of that webpage, not the source code. So when referencing the content of the webpage, use [filename] in your response
+
 Context: ${workspace}
+
 History:
-${subjects[activeSubject].chatHistory.slice(-5).map(h => h.text).join("\n")}
+${subjects[activeSubject].chatHistory.slice(-5).map(h => h.text).join("\\n")}
+
 Question:
 ${msg}`;
 
@@ -798,14 +837,14 @@ ${msg}`;
                 const jsonMatch = aiData.match(/\{[\s\S]*\}/);
                 aiData = JSON.parse(jsonMatch ? jsonMatch[0] : aiData);
             } catch {
-                aiData = { text: aiData, answers: [] };
+                aiData = { text: aiData, highlights: [] };
             }
         }
 
         subjects[activeSubject].chatHistory.push({
             role: "ai",
             text: aiData.text || "",
-            answers: aiData.answers || []
+            highlights: aiData.highlights || []
         });
 
         renderChat();
