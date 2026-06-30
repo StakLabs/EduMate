@@ -10,6 +10,11 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const upload = multer({ storage: multer.memoryStorage() });
 
+// Verify API Key exists on startup
+if (!process.env.GEMINI_API_KEY) {
+    console.warn("WARNING: GEMINI_API_KEY is not defined in the environment variables!");
+}
+
 const corsOptions = {
     origin: '*', 
     methods: ['GET', 'POST', 'OPTIONS'],
@@ -22,10 +27,11 @@ app.use(cors(corsOptions));
 app.options('*', cors(corsOptions));
 app.use(express.json());
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 
 function getModelName(model) {
-    return 'gemini-2.5-flash-lite';
+    // Fallback to a highly reliable stable baseline model if needed
+    return 'gemini-2.5-flash'; 
 }
 
 function getMimeType(file) {
@@ -37,10 +43,12 @@ function getMimeType(file) {
         case 'png': return 'image/png';
         case 'jpg':
         case 'jpeg': return 'image/jpeg';
+        case 'webp': return 'image/webp';
         case 'pdf': return 'application/pdf';
         case 'txt': return 'text/plain';
         case 'csv': return 'text/csv';
-        default: return 'text/plain';
+        case 'json': return 'application/json';
+        default: return file.mimetype || 'application/octet-stream'; 
     }
 }
 
@@ -57,7 +65,6 @@ app.post('/ask', upload.single('file'), async (req, res) => {
             generationConfig.responseMimeType = "application/json";
         }
 
-        // Initialize model with specific string and instructions
         const model = genAI.getGenerativeModel({ 
             model: modelToUse,
             systemInstruction: systemInstruction 
@@ -89,12 +96,18 @@ app.post('/ask', upload.single('file'), async (req, res) => {
         });
 
         const response = await result.response;
-        const replyText = response.text();
+        
+        // Safety guard against blocked content configurations
+        if (!response.candidates || response.candidates.length === 0) {
+            throw new Error("No response candidates returned from Gemini. The prompt or file content may have triggered safety filters.");
+        }
 
+        const replyText = response.text();
         return res.json({ response: replyText });
 
     } catch (error) {
-        console.error('API Error:', error);
+        // Detailed logging to help you check Render's Log panel
+        console.error('API Error details:', error);
         return res.status(500).json({ 
             error: 'Failed to process request.', 
             details: error.message 
@@ -104,7 +117,6 @@ app.post('/ask', upload.single('file'), async (req, res) => {
 
 app.post('/websearch', upload.single('file'), async (req, res) => {
     try {
-        // Now req.body will correctly contain the prompt sent via FormData
         const { prompt, model: requestedModel = 'Lumen VI' } = req.body;
 
         if (!prompt) {
