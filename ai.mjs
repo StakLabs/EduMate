@@ -87,7 +87,7 @@ app.post('/ask', upload.single('file'), async (req, res) => {
         }
 
         if (parts.length === 0) {
-            return res.status(400).json({ error: 'Please provide a prompt or a file.' });
+            return res.status(400).json({ error: 'Bad Request', reason: 'Please provide a prompt or a file.' });
         }
 
         const result = await model.generateContent({
@@ -99,18 +99,22 @@ app.post('/ask', upload.single('file'), async (req, res) => {
         
         // Safety guard against blocked content configurations
         if (!response.candidates || response.candidates.length === 0) {
-            throw new Error("No response candidates returned from Gemini. The prompt or file content may have triggered safety filters.");
+            throw new Error("No response candidates returned. The prompt or file content may have triggered Google's safety filters.");
         }
 
         const replyText = response.text();
         return res.json({ response: replyText });
 
     } catch (error) {
-        // Detailed logging to help you check Render's Log panel
-        console.error('API Error details:', error);
+        console.error('\n❌ /ask API Error details:', error);
+        
+        // Extract the most readable reason for the failure
+        const reason = error?.response?.text() || error.message || 'An unknown error occurred while contacting the AI.';
+
         return res.status(500).json({ 
             error: 'Failed to process request.', 
-            details: error.message 
+            reason: reason,
+            status: error.status || 500
         });
     }
 });
@@ -120,7 +124,7 @@ app.post('/websearch', upload.single('file'), async (req, res) => {
         const { prompt, model: requestedModel = 'Lumen VI' } = req.body;
 
         if (!prompt) {
-            return res.status(400).json({ error: 'Please provide a search prompt.' });
+            return res.status(400).json({ error: 'Bad Request', reason: 'Please provide a search prompt.' });
         }
 
         const modelToUse = getModelName(requestedModel);
@@ -140,16 +144,30 @@ app.post('/websearch', upload.single('file'), async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Search API Error:', error);
+        console.error('\n❌ /websearch Search API Error:', error);
+
+        // Extract the most readable reason for the failure
+        const reason = error?.response?.text() || error.message || 'An unknown error occurred during web search.';
+
         return res.status(500).json({ 
             error: 'Failed to perform web search.', 
-            details: error.message 
+            reason: reason,
+            status: error.status || 500
         });
     }
 });
 
 app.get('/ping', (req, res) => {
     res.status(200).send('Pong');
+});
+
+// Global error handler for malformed requests (e.g., body too large, bad JSON)
+app.use((err, req, res, next) => {
+    console.error('\n❌ Global Server Error:', err);
+    res.status(err.status || 500).json({
+        error: 'Server Error',
+        reason: err.message || 'An unexpected server error occurred.'
+    });
 });
 
 app.listen(PORT, () => {
