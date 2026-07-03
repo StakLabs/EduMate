@@ -8,7 +8,12 @@ dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const upload = multer({ storage: multer.memoryStorage() });
+const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: {
+        fileSize: 25 * 1024 * 1024
+    }
+});
 
 const corsOptions = {
     origin: '*',
@@ -20,14 +25,27 @@ const corsOptions = {
 
 app.use(cors(corsOptions));
 app.options('*', cors(corsOptions));
-app.use(express.json());
+app.use(express.json({ limit: '25mb' }));
+app.use(express.urlencoded({ extended: true }));
+
+app.use((req, res, next) => {
+    console.log('\n================================================');
+    console.log(new Date().toISOString());
+    console.log(req.method, req.originalUrl);
+    console.log('IP:', req.ip);
+
+    if (Object.keys(req.query).length) {
+        console.log('Query:', req.query);
+    }
+
+    next();
+});
 
 if (!process.env.GEMINI_API_KEY) {
-    console.error('GEMINI_API_KEY is missing.');
-    process.exit(1);
+    console.error('ERROR: GEMINI_API_KEY is missing.');
 }
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 
 function getModelName() {
     return 'gemini-2.5-flash';
@@ -38,70 +56,39 @@ function getMimeType(file) {
         return file.mimetype;
     }
 
-    const ext = file.originalname.split('.').pop().toLowerCase();
+    const ext = (file.originalname.split('.').pop() || '').toLowerCase();
 
     switch (ext) {
-        case 'png':
-            return 'image/png';
+        case 'png': return 'image/png';
         case 'jpg':
-        case 'jpeg':
-            return 'image/jpeg';
-        case 'webp':
-            return 'image/webp';
-        case 'pdf':
-            return 'application/pdf';
-        case 'txt':
-            return 'text/plain';
-        case 'csv':
-            return 'text/csv';
-        case 'json':
-            return 'application/json';
-        default:
-            return 'application/octet-stream';
+        case 'jpeg': return 'image/jpeg';
+        case 'webp': return 'image/webp';
+        case 'pdf': return 'application/pdf';
+        case 'txt': return 'text/plain';
+        case 'csv': return 'text/csv';
+        case 'json': return 'application/json';
+        default: return 'application/octet-stream';
     }
-}
-
-async function generate(parts, systemInstruction, generationConfig = {}) {
-    const model = genAI.getGenerativeModel({
-        model: getModelName(),
-        systemInstruction
-    });
-
-    const result = await model.generateContent({
-        contents: [{ role: 'user', parts }],
-        generationConfig
-    });
-
-    const response = result.response;
-
-    if (!response) {
-        throw new Error('No response returned.');
-    }
-
-    if (!response.candidates || response.candidates.length === 0) {
-        throw new Error('No candidates returned.');
-    }
-
-    const text = response.text().trim();
-
-    if (!text) {
-        throw new Error('Gemini returned an empty response.');
-    }
-
-    return {
-        text,
-        response
-    };
 }
 
 app.post('/ask', upload.single('file'), async (req, res) => {
     try {
-        const { prompt = '' } = req.body;
+        console.log('----- /ask REQUEST -----');
 
-        if (!prompt && !req.file) {
-            return res.status(400).json({
-                error: 'Please provide a prompt or a file.'
-            });
+        const prompt = req.body.prompt || '';
+        const requestedModel = req.body.model || 'Lumen VI';
+
+        console.log('Requested model:', requestedModel);
+        console.log('Prompt length:', prompt.length);
+        console.log('Prompt preview:', prompt.substring(0, 300));
+
+        if (req.file) {
+            console.log('File name:', req.file.originalname);
+            console.log('Mime type:', req.file.mimetype);
+            console.log('Detected mime:', getMimeType(req.file));
+            console.log('Size:', req.file.size, 'bytes');
+        } else {
+            console.log('No file uploaded.');
         }
 
         const parts = [];
@@ -113,73 +100,135 @@ app.post('/ask', upload.single('file'), async (req, res) => {
                     mimeType: getMimeType(req.file)
                 }
             });
-
-            parts.push({
-                text: 'Use the uploaded file as the primary source of information. Answer only using its contents whenever possible.'
-            });
         }
 
         if (prompt) {
-            parts.push({ text: prompt });
+            parts.push({
+                text: prompt
+            });
         }
 
-        let systemInstruction = 'You are an expert educational assistant helping students learn from uploaded study material.';
+        console.log('Parts:', parts.length);
+
         const generationConfig = {};
+        let systemInstruction = 'You are an expert educational assistant helping users study from uploaded material.';
 
         if (prompt.includes('[CRITICAL: RETURN ONLY JSON]')) {
-            systemInstruction += ' Return ONLY valid raw JSON with no markdown.';
             generationConfig.responseMimeType = 'application/json';
+            systemInstruction += ' Return only valid JSON.';
         }
 
-        const { text } = await generate(parts, systemInstruction, generationConfig);
+        console.log('Creating Gemini model...');
+
+        const model = genAI.getGenerativeModel({
+            model: getModelName(requestedModel),
+            systemInstruction
+        });
+
+        console.log('Calling Gemini...');
+
+        const result = await model.generateContent({
+            contents: [
+                {
+                    role: 'user',
+                    parts
+                }
+            ],
+            generationConfig
+        });
+
+        console.log('Gemini request completed.');
+
+        const response = result.response;
+
+        console.log('Response exists:', !!response);
+        console.log('Candidates:', response?.candidates?.length || 0);
+
+        let text = '';
+
+        try {
+            text = response.text();
+        } catch (e) {
+            console.error('response.text() failed');
+            console.error(e);
+        }
+
+        console.log('Response length:', text.length);
+        console.log('Response preview:');
+        console.log(text.substring(0, 500));
 
         res.json({
             response: text
         });
+
+        console.log('Response sent.');
     } catch (error) {
+        console.error('\n===== GEMINI ERROR =====');
         console.error(error);
+
+        if (error.stack) {
+            console.error(error.stack);
+        }
+
+        if (error.response) {
+            console.error('API Response:', error.response);
+        }
+
+        if (error.status) {
+            console.error('Status:', error.status);
+        }
+
+        if (error.code) {
+            console.error('Code:', error.code);
+        }
+
+        if (error.details) {
+            console.error('Details:', error.details);
+        }
 
         res.status(500).json({
             error: 'Failed to process request.',
-            details: error.message
+            details: error.message,
+            stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
         });
     }
 });
 
 app.post('/websearch', async (req, res) => {
     try {
-        const { prompt } = req.body;
+        console.log('----- /websearch REQUEST -----');
 
-        if (!prompt) {
-            return res.status(400).json({
-                error: 'Please provide a search prompt.'
-            });
-        }
+        const prompt = req.body.prompt || '';
+
+        console.log('Prompt:', prompt);
 
         const model = genAI.getGenerativeModel({
             model: getModelName(),
             tools: [{ googleSearch: {} }]
         });
 
+        console.log('Calling Gemini Search...');
+
         const result = await model.generateContent(prompt);
+
+        console.log('Gemini Search completed.');
+
         const response = result.response;
+        const text = response.text();
 
-        if (!response) {
-            throw new Error('No response returned.');
-        }
-
-        const text = response.text().trim();
-
-        if (!text) {
-            throw new Error('Gemini returned an empty response.');
-        }
+        console.log('Search response length:', text.length);
 
         res.json({
             response: text,
             sources: response.candidates?.[0]?.groundingMetadata?.searchEntryPoint?.htmlContent || null
         });
     } catch (error) {
+        console.error('\n===== SEARCH ERROR =====');
         console.error(error);
+
+        if (error.stack) {
+            console.error(error.stack);
+        }
 
         res.status(500).json({
             error: 'Failed to perform web search.',
@@ -189,9 +238,34 @@ app.post('/websearch', async (req, res) => {
 });
 
 app.get('/ping', (req, res) => {
+    console.log('/ping');
     res.send('Pong');
 });
 
+app.use((err, req, res, next) => {
+    console.error('\n===== EXPRESS ERROR =====');
+    console.error(err);
+
+    res.status(500).json({
+        error: err.message
+    });
+});
+
+process.on('uncaughtException', err => {
+    console.error('\n===== UNCAUGHT EXCEPTION =====');
+    console.error(err);
+});
+
+process.on('unhandledRejection', err => {
+    console.error('\n===== UNHANDLED REJECTION =====');
+    console.error(err);
+});
+
 app.listen(PORT, () => {
-    console.log(`EduMate Backend running on port ${PORT}`);
+    console.log('======================================');
+    console.log('EduMate Backend Started');
+    console.log('Port:', PORT);
+    console.log('Node:', process.version);
+    console.log('Gemini Key Loaded:', !!process.env.GEMINI_API_KEY);
+    console.log('======================================');
 });
